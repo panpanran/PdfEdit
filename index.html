@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Upload, Inline Annotation & Download</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { 
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; 
+        margin: 16px auto; 
+        max-width: 1000px; 
+    }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-start; margin-bottom:12px; } 
+    .page-controls { display:flex; gap:8px; align-items:center; }
+    .page-container { border:1px solid #ddd; margin-bottom: 10px; } 
+    .tools { display:flex; gap:8px; align-items:center; }
+    .label { font-weight:600; }
+    .hint { color:#666; font-size:12px; }
+    .row { margin:8px 0; }
+    button, input, select { padding:6px 10px; font-size:14px; }
+    .tool-active { background:#1f6feb; color:white; }
+    
+    #pdf-viewer-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center; 
+        width: 100%;
+    }
+    
+    .page-wrapper {
+        position: relative; 
+        display: inline-block; 
+        margin-bottom: 10px; 
+        box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    
+    .pdfCanvas {
+        display: block;
+    }
+
+    /* Dynamic text input for inline editing */
+    #annotationInput {
+        position: absolute; 
+        border: 1px dashed black; 
+        box-sizing: content-box;
+        padding: 0;
+        margin: 0;
+        line-height: 1.2; 
+        background: rgba(255, 255, 255, 0.9);
+        z-index: 100;
+        resize: none; 
+        overflow: hidden; 
+    }
+    
+    /* 拖动预览元素样式 */
+    #dragPreview {
+        display: none; 
+        position: absolute; 
+        z-index: 99;
+        white-space: pre-wrap;
+        box-sizing: border-box;
+        padding: 0;
+        margin: 0;
+        line-height: 1.2;
+        background: rgba(255, 255, 255, 0.8);
+        pointer-events: none; 
+    }
+
+    /* Signature Modal Styles */
+    #signatureModal {
+        display: none; 
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.4); 
+        padding-top: 50px;
+    }
+    #signatureContent {
+        background-color: #fefefe;
+        margin: 5% auto; 
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%; 
+        max-width: 600px;
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+    }
+    #signaturePadCanvas {
+        border: 1px solid #000;
+        background: #fff;
+        display: block;
+        cursor: crosshair;
+        width: 100%; 
+        height: 200px; 
+    }
+    .modal-buttons {
+        margin-top: 10px;
+        text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <h2>PDF Upload, Inline Annotation & Download</h2>
+
+  <div class="toolbar">
+    <div class="row">
+      <span class="label">Choose PDF:</span>
+      <input type="file" id="fileInput" accept="application/pdf" />
+    </div>
+    
+    <div class="page-controls">
+      <span class="label">Total Pages: <span id="pageCount">0</span></span>
+      <label for="pageInput">Go to Page:</label>
+      <input type="number" id="pageInput" min="1" value="1" style="width: 50px;" disabled />
+      <button id="goToPageBtn" disabled>Go</button>
+    </div>
+
+    <div class="tools">
+      <span class="label">Tools:</span>
+      <button id="toolText">Text</button>
+      <button id="toolHighlight">Highlight</button>
+      <button id="toolSignature">Signature ✍️</button>
+      <button id="toolDelete">Delete 🗑️</button>
+      <input id="colorInput" type="color" value="#ff0000" title="Color" />
+      <select id="fontSize">
+        <option value="12">12px</option>
+        <option value="14" selected>14px</option>
+        <option value="18">18px</option>
+        <option value="24">24px</option>
+        <option value="32">32px</option>
+      </select>
+	  <button id="undoBtn" disabled>Undo (Ctrl+Z)</button>
+      <button id="redoBtn" disabled>Redo (Ctrl+Y)</button>
+      <button id="downloadBtn" disabled>Download annotated PDF</button>
+    </div>
+  </div>
+
+  <div class="hint">Tip: Use mouse wheel or arrow keys to scroll through pages. Text = click to place, DOUBLE-CLICK to edit, drag to move. Delete = click on an annotation to remove.</div>
+
+  <div id="pdf-viewer-wrapper">
+    </div>
+
+  <textarea id="annotationInput" style="display:none;"></textarea>
+  <div id="dragPreview"></div> 
+  
+  <div id="signatureModal">
+      <div id="signatureContent">
+          <h3>Draw Your Signature</h3>
+          <canvas id="signaturePadCanvas" width="560" height="200"></canvas>
+          <div class="modal-buttons">
+              <button id="clearSignatureBtn">Clear</button>
+              <button id="saveSignatureBtn">Save and Place</button>
+              <button id="closeSignatureBtn">Cancel</button>
+          </div>
+      </div>
+  </div>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+
+  <script>
+    if (window['pdfjsLib']) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    }
+
+    const fileInput = document.getElementById('fileInput');
+    const pdfViewerWrapper = document.getElementById('pdf-viewer-wrapper');
+    const pageCountSpan = document.getElementById('pageCount');
+
+    const toolTextBtn = document.getElementById('toolText');
+    const toolHighlightBtn = document.getElementById('toolHighlight');
+    const toolDeleteBtn = document.getElementById('toolDelete');
+    const toolSignatureBtn = document.getElementById('toolSignature');
+
+    const colorInput = document.getElementById('colorInput');
+    const fontSizeSelect = document.getElementById('fontSize');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const undoBtn = document.getElementById('undoBtn'); 
+    const redoBtn = document.getElementById('redoBtn'); 
+    const annotationInput = document.getElementById('annotationInput'); 
+    const dragPreview = document.getElementById('dragPreview'); 
+    
+    const pageInput = document.getElementById('pageInput');
+    const goToPageBtn = document.getElementById('goToPageBtn');
+    
+    // Signature Elements
+    const signatureModal = document.getElementById('signatureModal');
+    const signaturePadCanvas = document.getElementById('signaturePadCanvas');
+    const clearSignatureBtn = document.getElementById('clearSignatureBtn');
+    const saveSignatureBtn = document.getElementById('saveSignatureBtn');
+    const closeSignatureBtn = document.getElementById('closeSignatureBtn');
+    let signatureCtx = signaturePadCanvas.getContext('2d');
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    
+    // Cache for signature images to ensure synchronous drawing
+    let signatureImageCache = new Map();
+
+
+    let pdfDoc = null;
+    let annotations = []; 
+    let history = []; 
+    let redoHistory = [];
+    const MAX_HISTORY = 10; 
+
+    let currentTool = 'text'; 
+    let dragStart = null; 
+    let dragEnd = null;
+    
+    let activeAnno = null; 
+    let activeAnnoPage = -1; 
+    let activeCanvas = null; 
+    let activePageWrapper = null; 
+
+    let dragAnno = null; 
+    let dragOffset = {x: 0, y: 0}; 
+    let isDragging = false; 
+
+    annotationInput.addEventListener('blur', (e) => {
+        if (activeAnno) {
+            (async () => {
+                 await finalizeText();
+            })();
+        }
+    });
+
+    function setTool(button, toolName) {
+      if (activeAnno) {
+          (async () => { await finalizeText(); })();
+      }
+      
+      dragAnno = null;
+      dragStart = null;
+      isDragging = false;
+      dragPreview.style.display = 'none'; 
+      
+      [toolTextBtn, toolHighlightBtn, toolDeleteBtn, toolSignatureBtn].forEach(b => b.classList.remove('tool-active'));
+      button.classList.add('tool-active');
+      currentTool = toolName;
+      
+      if (toolName === 'highlight') {
+        colorInput.value = '#ffff00'; 
+      }
+      
+      if (toolName === 'signature') {
+        openSignaturePad();
+      }
+    }
+
+    toolTextBtn.onclick = () => setTool(toolTextBtn, 'text');
+    toolHighlightBtn.onclick = () => setTool(toolHighlightBtn, 'highlight');
+    toolDeleteBtn.onclick = () => setTool(toolDeleteBtn, 'delete');
+    toolSignatureBtn.onclick = () => setTool(toolSignatureBtn, 'signature');
+
+    document.addEventListener('DOMContentLoaded', () => {
+        toolTextBtn.click();
+    });
+
+    // --- History Functions ---
+    function saveState() {
+        const newState = JSON.parse(JSON.stringify(annotations));
+        history.push(newState);
+        if (history.length > MAX_HISTORY) {
+            history.shift();
+        }
+        redoHistory = []; 
+        updateHistoryButtons();
+    }
+    
+    function updateHistoryButtons() {
+        undoBtn.disabled = history.length <= 1; 
+        redoBtn.disabled = redoHistory.length === 0;
+    }
+    
+    // Function to preload all signature images into the cache
+    async function preloadSignatureImages() {
+        const imagePromises = [];
+
+        for (const pageAnnos of annotations) {
+            for (const a of pageAnnos) {
+                if (a.type === 'signature' && a.dataUrl && !signatureImageCache.has(a.dataUrl)) {
+                    const img = new Image();
+                    img.src = a.dataUrl;
+                    const loadPromise = new Promise((resolve, reject) => {
+                        img.onload = () => resolve();
+                        img.onerror = (e) => {
+                            console.error("Error loading signature image:", e);
+                            resolve(); 
+                        };
+                    });
+                    signatureImageCache.set(a.dataUrl, img);
+                    imagePromises.push(loadPromise);
+                }
+            }
+        }
+        await Promise.all(imagePromises);
+    }
+
+
+    // --- RENDER LOGIC: Updated to wait for image preloading ---
+    async function renderAllPages() {
+      if (!pdfDoc) return;
+      pdfViewerWrapper.innerHTML = ''; 
+      
+      // CRITICAL: Preload all images BEFORE starting rendering pages
+      await preloadSignatureImages(); 
+
+      const scale = 1.5; 
+      const numPages = pdfDoc.numPages;
+      pageCountSpan.textContent = numPages;
+      
+      pageInput.max = numPages;
+      pageInput.disabled = false;
+      goToPageBtn.disabled = false;
+
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const viewport = page.getViewport({ scale });
+        
+        const pageWrapper = document.createElement('div');
+        pageWrapper.className = 'page-wrapper';
+        pageWrapper.id = `page-wrapper-${i}`; 
+        
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdfCanvas';
+        canvas.dataset.pageNum = i;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        
+        pageWrapper.style.width = `${canvas.width}px`; 
+        
+        canvas.style.width = `${canvas.width}px`;
+        canvas.style.height = `${canvas.height}px`;
+
+        pageWrapper.appendChild(canvas);
+        pdfViewerWrapper.appendChild(pageWrapper);
+
+        const ctx = canvas.getContext('2d');
+        const renderContext = { canvasContext: ctx, viewport };
+        await page.render(renderContext).promise;
+
+        drawAnnotations(canvas, i, viewport);
+        
+        addPageEventListeners(canvas);
+      }
+    }
+    
+    async function rerenderSinglePage(canvas, pageNum) {
+        if (!pdfDoc) return; 
+        const page = await pdfDoc.getPage(pageNum);
+        const scale = 1.5; 
+        const viewport = page.getViewport({ scale });
+        
+        const newWidth = Math.floor(viewport.width);
+        const newHeight = Math.floor(viewport.height);
+
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        
+        canvas.style.width = `${newWidth}px`;
+        canvas.style.height = `${newHeight}px`;
+        canvas.parentNode.style.width = `${newWidth}px`;
+        
+        const ctx = canvas.getContext('2d');
+        
+        ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        
+        const renderContext = { canvasContext: ctx, viewport };
+        await page.render(renderContext).promise;
+        
+        drawAnnotations(canvas, pageNum, viewport);
+    }
+    
+    // --- Annotation Drawing (Uses synchronous cache) ---
+    function drawAnnotations(canvas, pageNum, viewport) {
+      const ctx = canvas.getContext('2d');
+      const pageAnnos = annotations[pageNum - 1] || [];
+
+      pageAnnos.forEach(a => {
+        if (dragAnno === a || activeAnno === a) return; 
+
+        ctx.save();
+        ctx.globalAlpha = a.type === 'highlight' ? 0.35 : 1.0;
+        ctx.fillStyle = a.color;
+        ctx.strokeStyle = a.color;
+
+        if (a.type === 'text') {
+          ctx.globalAlpha = 1.0;
+          ctx.font = `${a.fontSize}px sans-serif`;
+          ctx.fillStyle = a.color;
+          const lines = a.text.split('\n');
+          const lineHeight = a.fontSize * 1.2; 
+          
+          let estimatedWidth = a.text.trim() === '' ? 100 : 200;
+          
+          lines.forEach((line, index) => {
+              ctx.fillText(line, a.x, a.y + a.fontSize + index * lineHeight); 
+              estimatedWidth = Math.max(estimatedWidth, ctx.measureText(line).width);
+          });
+          
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; 
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 3]); 
+          
+          const linesCount = lines.length || 1;
+          const estimatedHeight = linesCount * lineHeight;
+            
+          ctx.strokeRect(a.x, a.y, estimatedWidth, estimatedHeight);
+          ctx.restore();
+
+        } else if (a.type === 'highlight') {
+          ctx.fillRect(a.x, a.y, a.w, a.h);
+        } else if (a.type === 'signature') {
+            const img = signatureImageCache.get(a.dataUrl);
+            if (img && img.complete) { 
+                ctx.save();
+                ctx.drawImage(img, a.x, a.y, a.w, a.h);
+                
+                // Draw dashed border to mimic a textbox
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; 
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 3]); 
+                ctx.strokeRect(a.x, a.y, a.w, a.h);
+                
+                ctx.restore();
+            }
+        }
+        ctx.restore();
+      });
+    }
+    
+    // Utility to check if a point is inside an annotation's bounding box
+    function isInsideAnnotation(point, anno, canvas) {
+        if (anno.type === 'highlight' || anno.type === 'signature') {
+             return (
+                point.x >= anno.x && point.x <= anno.x + anno.w && 
+                point.y >= anno.y && point.y <= anno.y + anno.h
+            );
+        } else if (anno.type === 'text') {
+            const ctx = canvas.getContext('2d');
+            ctx.save();
+            ctx.font = `${anno.fontSize}px sans-serif`;
+            const lines = anno.text.split('\n');
+            const lineHeight = anno.fontSize * 1.2;
+            
+            const estimatedWidth = anno.text.trim() === '' ? 100 : Math.max(200, ...lines.map(line => ctx.measureText(line).width)); 
+            const linesCount = lines.length || 1;
+            const estimatedHeight = linesCount * lineHeight;
+            
+            ctx.restore();
+            
+            const x = anno.x;
+            const y = anno.y; 
+            const padding = 5; 
+
+            return (
+                point.x >= x - padding && point.x <= x + estimatedWidth + padding && 
+                point.y >= y - padding && point.y <= y + estimatedHeight + padding
+            );
+        }
+        return false;
+    }
+
+    // --- Text Editing & Activation ---
+    async function finalizeText() {
+        if (!activeAnno || activeAnno.type !== 'text') return;
+        
+        const newText = annotationInput.value;
+        const oldText = activeAnno.text;
+
+        if (newText !== oldText) { 
+            saveState(); 
+        }
+
+        if (newText.trim() === '') {
+            annotations[activeAnnoPage - 1] = annotations[activeAnnoPage - 1].filter(a => a !== activeAnno);
+        } else {
+            activeAnno.text = newText;
+        }
+
+        const canvasToRerender = activeCanvas; 
+
+        activeAnno = null;
+        activeAnnoPage = -1;
+        activeCanvas = null;
+        activePageWrapper = null;
+        
+        if (canvasToRerender) {
+            await rerenderSinglePage(canvasToRerender, parseInt(canvasToRerender.dataset.pageNum));
+        }
+
+        annotationInput.style.display = 'none';
+        annotationInput.value = '';
+    }
+
+    function activateTextEdit(anno, pageNum, canvas) {
+        if (activeAnno) {
+            (async () => { await finalizeText(); })();
+        }
+        
+        const pageWrapper = canvas.parentNode;
+        const rect = canvas.getBoundingClientRect();
+        const scaleFactor = rect.width / canvas.width;
+        
+        pageWrapper.appendChild(annotationInput); 
+        
+        const left = (anno.x * scaleFactor); 
+        const top = (anno.y * scaleFactor);
+        
+        const fontSize = anno.fontSize;
+        const lineHeight = fontSize * 1.2;
+        
+        annotationInput.value = anno.text;
+        
+        annotationInput.style.cssText = `
+            display: block;
+            position: absolute;
+            left: ${left}px;
+            top: ${top}px; 
+            color: ${anno.color};
+            font-size: ${fontSize}px;
+            font-family: sans-serif;
+            border: 1px dashed ${anno.color}; 
+            min-width: 50px;
+            min-height: ${lineHeight}px;
+            line-height: ${lineHeight}px;
+            padding-right: 2px; 
+            width: fit-content;
+            height: fit-content;
+            white-space: pre-wrap; 
+            z-index: 100;
+        `;
+        
+        activeAnno = anno;
+        activeAnnoPage = pageNum;
+        activeCanvas = canvas;
+        activePageWrapper = pageWrapper;
+        
+        rerenderSinglePage(canvas, pageNum);
+
+        window.requestAnimationFrame(() => {
+            annotationInput.focus();
+            setTimeout(() => {
+                annotationInput.select();
+            }, 10);
+        });
+    }
+
+    // --- Drag Preview Setup (Updated for Signature) ---
+    function setupDragPreview(anno, canvas) {
+        const pageWrapper = canvas.parentNode;
+        const rect = canvas.getBoundingClientRect();
+        const scaleFactor = rect.width / canvas.width;
+
+        if (anno.type === 'signature') {
+            // Added object-fit: contain to maintain aspect ratio in drag preview
+            dragPreview.innerHTML = `<img src="${anno.dataUrl}" style="width:100%; height:100%; object-fit: contain;">`;
+            dragPreview.style.width = `${anno.w * scaleFactor}px`;
+            dragPreview.style.height = `${anno.h * scaleFactor}px`;
+            dragPreview.style.color = 'black'; 
+            dragPreview.style.fontSize = '1px'; 
+            dragPreview.style.lineHeight = '1px';
+            dragPreview.style.border = '1px dashed rgba(0, 0, 0, 0.5)';
+            dragPreview.style.background = 'transparent'; 
+        } else { // Text annotation
+            dragPreview.textContent = anno.text;
+            dragPreview.style.color = anno.color;
+            dragPreview.style.fontSize = `${anno.fontSize}px`;
+            dragPreview.style.fontFamily = 'sans-serif';
+            dragPreview.style.lineHeight = `${anno.fontSize * 1.2}px`;
+            dragPreview.style.border = '1px dashed rgba(0, 0, 0, 0.5)';
+            dragPreview.style.background = 'rgba(255, 255, 255, 0.8)';
+            dragPreview.style.width = 'fit-content';
+            dragPreview.style.height = 'fit-content';
+        }
+
+        dragPreview.style.left = `${anno.x * scaleFactor}px`; 
+        dragPreview.style.top = `${anno.y * scaleFactor}px`;
+        dragPreview.style.display = 'block';
+
+        pageWrapper.appendChild(dragPreview);
+    }
+    
+    // --- Mouse Handlers (Updated for Signature Interaction) ---
+    function handleMouseDown(e, canvas, pageNum) {
+      if (activeAnno) {
+          (async () => { await finalizeText(); })();
+      }
+      
+      if (currentTool !== 'text' && currentTool !== 'delete' && currentTool !== 'highlight') return;
+
+      const pos = getCanvasPos(e, canvas);
+      let pageAnnos = annotations[pageNum - 1] || [];
+      
+      dragAnno = null;
+      dragStart = pos;
+      isDragging = false; 
+      dragPreview.style.display = 'none'; 
+
+      const clickedAnno = pageAnnos.find(a => 
+          (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, canvas)
+      );
+      
+      // --- DELETE Tool Logic ---
+      if (currentTool === 'delete') {
+          if (clickedAnno) {
+              saveState();
+              annotations[pageNum - 1] = pageAnnos.filter(a => a !== clickedAnno);
+              rerenderSinglePage(canvas, pageNum);
+          } else {
+             const clickedHighlight = pageAnnos.find(a => 
+                a.type === 'highlight' && isInsideAnnotation(pos, a, canvas)
+             );
+             if (clickedHighlight) {
+                saveState();
+                annotations[pageNum - 1] = pageAnnos.filter(a => a !== clickedHighlight);
+                rerenderSinglePage(canvas, pageNum);
+             }
+          }
+          dragStart = null; 
+          return; 
+      }
+
+      // --- TEXT Tool Logic (and dragging existing signatures) ---
+      if (currentTool === 'text') {
+        
+        if (clickedAnno) {
+            if (clickedAnno.text || clickedAnno.type === 'signature') { 
+                saveState(); // Save state before starting drag to allow undo
+                dragAnno = clickedAnno;
+                dragOffset = {x: pos.x - clickedAnno.x, y: pos.y - clickedAnno.y};
+                
+                setupDragPreview(dragAnno, canvas);
+                rerenderSinglePage(canvas, pageNum); 
+            }
+        } else {
+            // Start creating new Text annotation
+            const fontSize = parseInt(fontSizeSelect.value, 10);
+            const newAnno = {
+                type: 'text',
+                x: pos.x,
+                y: pos.y, 
+                color: colorInput.value,
+                text: '', 
+                fontSize: fontSize,
+            };
+            // Note: State is saved when we finalize the edit, or when a drag starts.
+            annotations[pageNum - 1].push(newAnno);
+            dragAnno = newAnno;
+            dragOffset = {x: pos.x - newAnno.x, y: pos.y - newAnno.y};
+        }
+        return; 
+      } 
+    }
+
+    function handleMouseMove(e, canvas, pageNum) {
+        const pos = getCanvasPos(e, canvas);
+        const ctx = canvas.getContext('2d');
+        
+        if (dragStart) {
+            dragEnd = pos;
+            const distance = Math.sqrt(Math.pow(dragEnd.x - dragStart.x, 2) + Math.pow(dragEnd.y - dragStart.y, 2));
+            if (distance > 5) { 
+                isDragging = true;
+            }
+
+            if ((currentTool === 'text' || dragAnno && dragAnno.type === 'signature') && dragAnno && isDragging) {
+                const newX = dragEnd.x - dragOffset.x;
+                const newY = dragEnd.y - dragOffset.y;
+                
+                // Only update position in dragAnno if it's currently being dragged
+                dragAnno.x = newX;
+                dragAnno.y = newY;
+                
+                const rect = canvas.getBoundingClientRect();
+                const scaleFactor = rect.width / canvas.width;
+                dragPreview.style.left = `${newX * scaleFactor}px`;
+                dragPreview.style.top = `${newY * scaleFactor}px`;
+
+                return; 
+            } 
+            
+            // Highlight Preview Logic
+            if (currentTool === 'highlight') {
+                 rerenderSinglePage(canvas, pageNum).then(() => {
+                    if (!dragEnd) return;
+                    const x = Math.min(dragStart.x, dragEnd.x);
+                    const y = Math.min(dragStart.y, dragEnd.y);
+                    const w = Math.abs(dragEnd.x - dragStart.x);
+                    const h = Math.abs(dragEnd.y - dragStart.y);
+                    
+                    ctx.save();
+                    ctx.globalAlpha = 0.35; 
+                    ctx.fillStyle = colorInput.value;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.restore();
+                });
+                return; 
+            }
+        }
+        
+        // --- Hover Cursor (Updated for Signature) --- 
+        if ((currentTool === 'text' || currentTool === 'delete') && !dragStart && !activeAnno) { 
+            const pageAnnos = annotations[pageNum - 1] || [];
+            
+            const isOverMovable = pageAnnos.find(a => 
+                (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, canvas)
+            );
+
+            if (currentTool === 'text') {
+                canvas.style.cursor = isOverMovable ? 'move' : 'default';
+            } else if (currentTool === 'delete') {
+                const isOverDeletable = pageAnnos.find(a => isInsideAnnotation(pos, a, canvas));
+                canvas.style.cursor = isOverDeletable ? 'pointer' : 'default';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        } else if (currentTool !== 'text' && currentTool !== 'delete') {
+            canvas.style.cursor = 'default';
+        }
+    }
+
+    function handleMouseUp(e, canvas, pageNum) {
+      if (!dragStart) return;
+      dragEnd = getCanvasPos(e, canvas);
+
+      if (currentTool === 'text') { 
+        if (!dragAnno) {
+            dragStart = null;
+            return; 
+        }
+
+        dragPreview.style.display = 'none'; 
+
+        // If dragAnno is a new text box and there was no drag, activate edit
+        if (!isDragging && dragAnno.type === 'text' && dragAnno.text.trim() === '') {
+            const annoToEdit = dragAnno; 
+            dragAnno = null; 
+            // Note: State is not saved here, but when finalizeText() is called.
+            activateTextEdit(annoToEdit, pageNum, canvas);
+            
+            dragStart = null;
+            dragEnd = null;
+            isDragging = false;
+            return;
+        }
+
+        // If a drag happened (for existing text or signature), state was saved in mousedown.
+        // If it was a new text annotation that was dragged, we need to save state.
+        if (isDragging) {
+             // If we reached here, the position was updated in mousemove, and state was saved in mousedown (for existing anno) 
+             // or we are just keeping the new, empty anno in place for later editing.
+             // If the anno was new and empty, it needs state saved.
+             if (dragAnno.type === 'text' && dragAnno.text.trim() === '') {
+                 // Nothing to save yet, user will double click or click to start editing
+             } else {
+                 saveState(); // Ensure state is saved after drag if it wasn't a brand new empty box
+             }
+        }
+
+        dragAnno = null;
+        dragStart = null;
+        dragEnd = null;
+        isDragging = false;
+        
+        rerenderSinglePage(canvas, pageNum);
+        return;
+      }
+
+      // Highlight Logic
+      if (currentTool === 'highlight') {
+        
+        const x = Math.min(dragStart.x, dragEnd.x);
+        const y = Math.min(dragStart.y, dragEnd.y);
+        const w = Math.abs(dragEnd.x - dragStart.x);
+        const finalH = Math.abs(dragEnd.y - dragStart.y); 
+
+        if (w > 5 && finalH > 5) {
+            saveState(); // Save state only if a valid highlight was created
+            annotations[pageNum - 1].push({
+                type: 'highlight',
+                x, y, w, h: finalH, 
+                color: colorInput.value
+            });
+        }
+        
+        dragStart = null;
+        dragEnd = null;
+        isDragging = false;
+        rerenderSinglePage(canvas, pageNum);
+      }
+    }
+    
+    function handleClick(e, canvas, pageNum) {
+        // Nothing needed here, most interactions handled by mousedown/mouseup
+    }
+    
+    // --- Signature Drawing Logic ---
+    function setupSignaturePad() {
+        const rect = signaturePadCanvas.getBoundingClientRect();
+        signaturePadCanvas.width = rect.width;
+        signaturePadCanvas.height = rect.height;
+
+        signatureCtx.fillStyle = '#fff';
+        signatureCtx.fillRect(0, 0, signaturePadCanvas.width, signaturePadCanvas.height);
+        
+        signatureCtx.strokeStyle = colorInput.value; 
+        signatureCtx.lineWidth = 2;
+        signatureCtx.lineCap = 'round';
+        signatureCtx.lineJoin = 'round';
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        
+        signatureCtx.beginPath();
+        signatureCtx.moveTo(lastX, lastY);
+        signatureCtx.lineTo(e._x, e._y);
+        signatureCtx.stroke();
+        [lastX, lastY] = [e._x, e._y];
+    }
+
+    function handleSignatureStart(e) {
+        isDrawing = true;
+        const rect = signaturePadCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        [lastX, lastY] = [x, y];
+        e._x = x;
+        e._y = y;
+        draw(e);
+    }
+    
+    function handleSignatureMove(e) {
+        if (!isDrawing) return;
+        const rect = signaturePadCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        e._x = clientX - rect.left;
+        e._y = clientY - rect.top;
+        draw(e);
+    }
+
+    function handleSignatureEnd() {
+        isDrawing = false;
+        signatureCtx.closePath();
+    }
+    
+    signaturePadCanvas.addEventListener('mousedown', handleSignatureStart);
+    signaturePadCanvas.addEventListener('mousemove', handleSignatureMove);
+    signaturePadCanvas.addEventListener('mouseup', handleSignatureEnd);
+    signaturePadCanvas.addEventListener('mouseout', handleSignatureEnd);
+
+    signaturePadCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleSignatureStart(e); });
+    signaturePadCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleSignatureMove(e); });
+    signaturePadCanvas.addEventListener('touchend', handleSignatureEnd);
+
+
+    function openSignaturePad() {
+        if (!pdfDoc) {
+            alert('Please upload a PDF first.');
+            setTool(toolTextBtn, 'text');
+            return;
+        }
+        signatureModal.style.display = 'block';
+        setupSignaturePad();
+    }
+
+    closeSignatureBtn.onclick = () => {
+        signatureModal.style.display = 'none';
+        setTool(toolTextBtn, 'text'); 
+    }
+    
+    clearSignatureBtn.onclick = () => {
+        setupSignaturePad(); 
+    }
+    
+    saveSignatureBtn.onclick = async () => { 
+        if (!pdfDoc) return;
+
+        const firstVisiblePageWrapper = Array.from(pdfViewerWrapper.children).find(el => {
+            const rect = el.getBoundingClientRect();
+            return rect.top >= 0 && rect.top <= window.innerHeight;
+        });
+
+        if (!firstVisiblePageWrapper) {
+            alert('Cannot determine visible page. Please scroll to a page.');
+            return;
+        }
+
+        const canvas = firstVisiblePageWrapper.querySelector('.pdfCanvas');
+        const pageNum = parseInt(canvas.dataset.pageNum, 10);
+        
+        // Get PNG Data URL
+        const dataUrl = signaturePadCanvas.toDataURL('image/png');
+        
+        // Default size for placement: 150x50 (in PDF canvas units, scale=1.5)
+        const defaultWidth = 150;
+        const defaultHeight = 50;
+        const pos = getCanvasPos({clientX: canvas.getBoundingClientRect().left + 50, clientY: canvas.getBoundingClientRect().top + 50}, canvas);
+
+        const newAnno = {
+            type: 'signature',
+            x: pos.x,
+            y: pos.y, 
+            w: defaultWidth, 
+            h: defaultHeight,
+            dataUrl: dataUrl
+        };
+        
+        saveState();
+        annotations[pageNum - 1].push(newAnno);
+        
+        // CRITICAL FIX: Add the image to the cache immediately and wait for it to load.
+        // This makes sure the subsequent rerenderSinglePage draws the image synchronously.
+        const img = new Image();
+        img.src = dataUrl;
+        signatureImageCache.set(dataUrl, img);
+        await new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve; 
+        }); 
+
+        signatureModal.style.display = 'none';
+        rerenderSinglePage(canvas, pageNum);
+        setTool(toolTextBtn, 'text'); 
+    }
+
+
+    // --- Core PDF Functions ---
+    async function openPdfFromFile(file) {
+      try { // ADDED try block for better debugging feedback
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        pdfDoc = await loadingTask.promise;
+        
+        // Clear all state including the image cache
+        annotations = Array.from({ length: pdfDoc.numPages }, () => []);
+        signatureImageCache.clear();
+        history = [];
+        redoHistory = [];
+        saveState(); 
+
+        await renderAllPages();
+        downloadBtn.disabled = false;
+      } catch (error) {
+        console.error("PDF Loading Error:", error);
+        alert("Error loading PDF. Please check the browser console (F12) for details.");
+        pdfViewerWrapper.innerHTML = 'PDF loading failed.';
+        pdfDoc = null;
+        downloadBtn.disabled = true;
+      }
+    }
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      await openPdfFromFile(file);
+    });
+    
+    // Mouse -> canvas coordinate conversion
+    function getCanvasPos(evt, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (evt.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (evt.clientY - rect.top) * (canvas.height / rect.height);
+      return { x, y };
+    }
+    
+    function handleDoubleClick(e, canvas, pageNum) {
+        if (activeAnno) {
+            (async () => { await finalizeText(); })(); 
+            return; 
+        }
+
+        if (currentTool !== 'text') return;
+
+        const pos = getCanvasPos(e, canvas);
+        let pageAnnos = annotations[pageNum - 1] || [];
+        
+        const clickedAnno = pageAnnos.find(a => 
+            a.type === 'text' && a.text.trim() !== '' && isInsideAnnotation(pos, a, canvas)
+        );
+        
+        if (clickedAnno) {
+            activateTextEdit(clickedAnno, pageNum, canvas);
+        }
+    }
+
+    // --- Page Event Listeners ---
+    function addPageEventListeners(canvas) {
+        const pageNum = parseInt(canvas.dataset.pageNum);
+        
+        canvas.addEventListener('mousedown', (e) => handleMouseDown(e, canvas, pageNum));
+        canvas.addEventListener('mousemove', (e) => handleMouseMove(e, canvas, pageNum));
+        canvas.addEventListener('mouseup', (e) => handleMouseUp(e, canvas, pageNum));
+        canvas.addEventListener('mouseout', () => { canvas.style.cursor = 'default'; });
+        canvas.addEventListener('click', (e) => handleClick(e, canvas, pageNum));
+        canvas.addEventListener('dblclick', (e) => handleDoubleClick(e, canvas, pageNum)); 
+    }
+    
+    // --- Undo/Redo implementations ---
+    async function performUndo() {
+        if (history.length > 1) {
+            if (activeAnno) await finalizeText(); 
+
+            const currentState = history.pop();
+            redoHistory.push(currentState);
+            annotations = history[history.length - 1]; 
+            await renderAllPages(); 
+            updateHistoryButtons();
+        }
+    };
+    undoBtn.onclick = performUndo;
+
+    async function performRedo() {
+        if (redoHistory.length > 0) {
+            if (activeAnno) await finalizeText();
+            const nextState = redoHistory.pop();
+            history.push(nextState);
+            annotations = nextState;
+            await renderAllPages();
+            updateHistoryButtons();
+        }
+    }
+    redoBtn.onclick = performRedo;
+
+    document.addEventListener('keydown', (e) => {
+        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+        if (isCtrlOrCmd) {
+            if (e.key === 'z') {
+                e.preventDefault(); 
+                performUndo();
+            } else if (e.key === 'y') {
+                e.preventDefault(); 
+                performRedo();
+            }
+        }
+    });
+
+    // --- Go To Page Logic ---
+    function goToPage(pageNum) {
+        if (activeAnno) {
+             (async () => { await finalizeText(); })();
+        }
+
+        const pageWrapper = document.getElementById(`page-wrapper-${pageNum}`);
+        if (pageWrapper) {
+            pageWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+    
+    goToPageBtn.addEventListener('click', () => {
+        let pageNum = parseInt(pageInput.value, 10);
+        
+        if (!pdfDoc) {
+            alert('Please upload a PDF first.');
+            return;
+        }
+
+        if (isNaN(pageNum) || pageNum < 1) {
+            pageNum = 1;
+        } else if (pageNum > pdfDoc.numPages) {
+            pageNum = pdfDoc.numPages;
+        }
+
+        pageInput.value = pageNum;
+        goToPage(pageNum);
+    });
+
+    pageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            goToPageBtn.click();
+        }
+    });
+
+    // --- Download (Updated for Signature) ---
+    async function applyAnnotationsAndDownload() {
+      if (!pdfDoc) return;
+      
+      if (activeAnno) {
+          await finalizeText(); 
+      }
+
+      const file = fileInput.files[0];
+      if (!file) return;
+      const originalBuffer = await file.arrayBuffer();
+
+      const { PDFDocument, rgb, StandardFonts } = PDFLib;
+      const pdf = await PDFDocument.load(originalBuffer);
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+      const firstPage = await pdfDoc.getPage(1);
+      const scale = 1.5;
+      const firstViewport = firstPage.getViewport({ scale });
+      const canvasW = Math.floor(firstViewport.width);
+      const canvasH = Math.floor(firstViewport.height);
+
+      for (let i = 0; i < pdf.getPageCount(); i++) {
+        const page = pdf.getPage(i);
+
+        const pageWidth = page.getWidth();
+        const pageHeight = page.getHeight();
+        
+        const scaleX = pageWidth / canvasW;
+        const scaleY = pageHeight / canvasH;
+
+        const pageAnnos = annotations[i] || [];
+        
+        const signatureEmbedPromises = [];
+
+        pageAnnos.forEach(a => {
+          if (a.type === 'text') {
+            const colorHex = a.color;
+            const r = parseInt(colorHex.slice(1, 3), 16) / 255;
+            const g = parseInt(colorHex.slice(3, 5), 16) / 255;
+            const b = parseInt(colorHex.slice(5, 7), 16) / 255;
+            
+            const lines = a.text.split('\n');
+            const fontSize = a.fontSize || 14;
+            const lineHeight = fontSize * 1.2;
+            
+            lines.forEach((line, index) => {
+                const x = a.x * scaleX;
+                const yCanvas = a.y + fontSize + index * lineHeight; 
+                const y = pageHeight - (yCanvas * scaleY); 
+                
+                page.drawText(line, {
+                  x,
+                  y,
+                  size: fontSize,
+                  font,
+                  color: rgb(r, g, b)
+                });
+            });
+          } else if (a.type === 'highlight') {
+            const colorHex = a.color;
+            const r = parseInt(colorHex.slice(1, 3), 16) / 255;
+            const g = parseInt(colorHex.slice(3, 5), 16) / 255;
+            const b = parseInt(colorHex.slice(5, 7), 16) / 255;
+            
+            const x = a.x * scaleX;
+            const yTopCanvas = a.y;
+            const y = pageHeight - ((yTopCanvas + a.h) * scaleY);
+            const w = a.w * scaleX;
+            const h = a.h * scaleY;
+
+            page.drawRectangle({
+              x, y, width: w, height: h,
+              color: rgb(r, g, b),
+              opacity: 0.35,
+              borderWidth: 0
+            });
+          } else if (a.type === 'signature') {
+              signatureEmbedPromises.push(async () => {
+                  const pngImage = await pdf.embedPng(a.dataUrl); 
+                  
+                  const x = a.x * scaleX;
+                  const yTopCanvas = a.y; 
+                  const y = pageHeight - ((yTopCanvas + a.h) * scaleY); 
+                  const w = a.w * scaleX;
+                  const h = a.h * scaleY;
+
+                  page.drawImage(pngImage, {
+                      x: x, 
+                      y: y, 
+                      width: w, 
+                      height: h,
+                      opacity: 1.0, 
+                  });
+              });
+          }
+        });
+
+        await Promise.all(signatureEmbedPromises.map(p => p()));
+      }
+
+      const pdfBytes = await pdf.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      const name = (file && file.name) ? file.name.replace(/\.pdf$/i, '') : 'document';
+      a.download = `${name}-annotated.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    downloadBtn.onclick = applyAnnotationsAndDownload;
+  </script>
+</body>
+</html>
