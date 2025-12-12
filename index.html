@@ -34,8 +34,17 @@
         box-shadow: 0 0 5px rgba(0,0,0,0.1);
     }
     
-    .pdfCanvas {
+    .pdfCanvas, .annoCanvas {
         display: block;
+    }
+
+    /* CRITICAL FIX for flickering: Annotation Canvas Overlay */
+    .annoCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 5; 
+        pointer-events: auto; 
     }
 
     /* Dynamic text input for inline editing */
@@ -100,6 +109,31 @@
         margin-top: 10px;
         text-align: right;
     }
+
+    /* 移动设备响应式优化 */
+    @media (max-width: 600px) {
+        body { margin: 8px; }
+        .toolbar { flex-direction: column; gap: 12px; align-items: flex-start; }
+        .row, .page-controls, .tools { width: 100%; box-sizing: border-box; }
+        .tools { flex-wrap: wrap; flex-direction: row; gap: 6px; }
+        button, input[type="file"], select { padding: 8px 10px; font-size: 15px; }
+        .row input[type="file"] { width: 100%; margin-top: 4px; }
+        .tools button { flex-grow: 1; min-width: 70px; }
+        .tools input[type="color"] { width: 40px; height: 34px; padding: 2px; flex-grow: 0; }
+        #fontSize { width: 70px; flex-grow: 0; }
+        .page-controls { flex-wrap: wrap; gap: 8px; }
+        .page-controls input { width: 60px !important; }
+        /* === PDF 缩放修正 (核心) === */
+        .page-wrapper { width: 100% !important; max-width: 100%; }
+        .pdfCanvas, .annoCanvas {
+            /* 关键：覆盖 JS 设置的固定像素宽度，使其适应屏幕，并保持纵横比 */
+            width: 100% !important; 
+            height: auto !important; 
+            max-width: 100%;
+        }
+        /* ==================== */
+    }
+    
   </style>
   
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7563616757033550" crossorigin="anonymous"></script>
@@ -162,20 +196,19 @@
   
   <div style="margin-top: 30px; padding: 20px; text-align: center; border-top: 1px solid #ddd;">
     <div id="ad-container-bottom" style="max-width: 728px; margin: 0 auto; height: 100px; background-color: #f0f0f0; line-height: 100px; color: #666; font-size: 16px; border: 1px dashed #ccc;">
-      在此处粘贴您的底部横幅广告代码（如 728x90），请替换此占位符 div
-    </div>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7563681675733550"
+     crossorigin="anonymous"></script>    </div>
   </div>
   
-  <script>
-    // ----------------------------------------------------
-    // [START] 您的实际浏览量统计脚本 (如 Google Analytics 或 Baidu Tongji)
-    // 请将统计代码粘贴到此位置
-    // ----------------------------------------------------
-    // 示例：console.log('View Counter/Analytics Placeholder: Insert actual script here.');
-    // ----------------------------------------------------
-    // [END] 您的实际浏览量统计脚本
-    // ----------------------------------------------------
-  </script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-FCQP2T463K"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-FCQP2T463K');
+</script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
@@ -234,7 +267,7 @@
     
     let activeAnno = null; 
     let activeAnnoPage = -1; 
-    let activeCanvas = null; 
+    let activeAnnoCanvas = null; 
     let activePageWrapper = null; 
 
     let dragAnno = null; 
@@ -268,6 +301,7 @@
       }
       
       if (toolName === 'signature') {
+        // Only open the pad, don't change the tool yet, let the pad handle it
         openSignaturePad();
       }
     }
@@ -284,6 +318,10 @@
     // --- History Functions ---
     function saveState() {
         const newState = JSON.parse(JSON.stringify(annotations));
+        if (history.length > 0 && JSON.stringify(history[history.length - 1]) === JSON.stringify(newState)) {
+            return;
+        }
+        
         history.push(newState);
         if (history.length > MAX_HISTORY) {
             history.shift();
@@ -322,12 +360,11 @@
     }
 
 
-    // --- RENDER LOGIC: Updated to wait for image preloading ---
+    // --- RENDER LOGIC: Uses dual canvas structure ---
     async function renderAllPages() {
       if (!pdfDoc) return;
       pdfViewerWrapper.innerHTML = ''; 
       
-      // CRITICAL: Preload all images BEFORE starting rendering pages
       await preloadSignatureImages(); 
 
       const scale = 1.5; 
@@ -346,62 +383,58 @@
         pageWrapper.className = 'page-wrapper';
         pageWrapper.id = `page-wrapper-${i}`; 
         
-        const canvas = document.createElement('canvas');
+        const canvas = document.createElement('canvas'); // Base PDF Canvas
         canvas.className = 'pdfCanvas';
         canvas.dataset.pageNum = i;
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         
+        const annoCanvas = document.createElement('canvas'); // Annotation Canvas (Transparent Overlay)
+        annoCanvas.className = 'annoCanvas';
+        annoCanvas.dataset.pageNum = i;
+        annoCanvas.width = canvas.width;
+        annoCanvas.height = canvas.height;
+        
         pageWrapper.style.width = `${canvas.width}px`; 
         
         canvas.style.width = `${canvas.width}px`;
         canvas.style.height = `${canvas.height}px`;
+        annoCanvas.style.width = `${canvas.width}px`; // Match base canvas size
+        annoCanvas.style.height = `${canvas.height}px`;
 
         pageWrapper.appendChild(canvas);
+        pageWrapper.appendChild(annoCanvas);
         pdfViewerWrapper.appendChild(pageWrapper);
 
+        // 1. Render PDF to base canvas
         const ctx = canvas.getContext('2d');
         const renderContext = { canvasContext: ctx, viewport };
         await page.render(renderContext).promise;
 
-        drawAnnotations(canvas, i, viewport);
+        // 2. Draw annotations to annotation canvas
+        drawAnnotations(annoCanvas, i);
         
-        addPageEventListeners(canvas);
+        // 3. Add event listeners to annotation canvas
+        addPageEventListeners(annoCanvas);
       }
     }
     
-    async function rerenderSinglePage(canvas, pageNum) {
-        if (!pdfDoc) return; 
-        const page = await pdfDoc.getPage(pageNum);
-        const scale = 1.5; 
-        const viewport = page.getViewport({ scale });
+    // Function: Only clears and redraws annotations on the annotation canvas
+    async function redrawAnnotationLayer(annoCanvas, pageNum) {
+        // Clear the annotation canvas
+        const ctx = annoCanvas.getContext('2d');
+        ctx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
         
-        const newWidth = Math.floor(viewport.width);
-        const newHeight = Math.floor(viewport.height);
-
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        
-        canvas.style.width = `${newWidth}px`;
-        canvas.style.height = `${newHeight}px`;
-        canvas.parentNode.style.width = `${newWidth}px`;
-        
-        const ctx = canvas.getContext('2d');
-        
-        ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        
-        const renderContext = { canvasContext: ctx, viewport };
-        await page.render(renderContext).promise;
-        
-        drawAnnotations(canvas, pageNum, viewport);
+        drawAnnotations(annoCanvas, pageNum);
     }
     
-    // --- Annotation Drawing (Uses synchronous cache) ---
-    function drawAnnotations(canvas, pageNum, viewport) {
-      const ctx = canvas.getContext('2d');
+    // --- Annotation Drawing (Takes the annotation canvas) ---
+    function drawAnnotations(annoCanvas, pageNum) {
+      const ctx = annoCanvas.getContext('2d');
       const pageAnnos = annotations[pageNum - 1] || [];
 
       pageAnnos.forEach(a => {
+        // Do NOT draw the active or dragging element on the canvas
         if (dragAnno === a || activeAnno === a) return; 
 
         ctx.save();
@@ -413,16 +446,19 @@
           ctx.globalAlpha = 1.0;
           ctx.font = `${a.fontSize}px sans-serif`;
           ctx.fillStyle = a.color;
+          
           const lines = a.text.split('\n');
           const lineHeight = a.fontSize * 1.2; 
           
-          let estimatedWidth = a.text.trim() === '' ? 100 : 200;
+          let estimatedWidth = 100;
           
           lines.forEach((line, index) => {
+              // Y position logic: Draw text baseline at y + fontSize
               ctx.fillText(line, a.x, a.y + a.fontSize + index * lineHeight); 
               estimatedWidth = Math.max(estimatedWidth, ctx.measureText(line).width);
           });
           
+          // Draw dashed border 
           ctx.save();
           ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; 
           ctx.lineWidth = 1;
@@ -431,7 +467,8 @@
           const linesCount = lines.length || 1;
           const estimatedHeight = linesCount * lineHeight;
             
-          ctx.strokeRect(a.x, a.y, estimatedWidth, estimatedHeight);
+          // Drawing rectangle from the top of the text box (a.y)
+          ctx.strokeRect(a.x, a.y, estimatedWidth + 5, estimatedHeight + 5);
           ctx.restore();
 
         } else if (a.type === 'highlight') {
@@ -442,20 +479,26 @@
                 ctx.save();
                 ctx.drawImage(img, a.x, a.y, a.w, a.h);
                 
-                // Draw dashed border to mimic a textbox
+                // Draw dashed border
                 ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; 
                 ctx.lineWidth = 1;
                 ctx.setLineDash([5, 3]); 
                 ctx.strokeRect(a.x, a.y, a.w, a.h);
                 
                 ctx.restore();
+            } else if (img && !img.complete) {
+                // If it's not complete, listen for load and redraw only this page
+                 img.onload = () => {
+                    // This is for newly loaded signatures during a render loop
+                    redrawAnnotationLayer(annoCanvas, pageNum).catch(console.error); 
+                 };
             }
         }
         ctx.restore();
       });
     }
     
-    // Utility to check if a point is inside an annotation's bounding box
+    // Utility to check if a point is inside an annotation's bounding box (unchanged)
     function isInsideAnnotation(point, anno, canvas) {
         if (anno.type === 'highlight' || anno.type === 'signature') {
              return (
@@ -469,7 +512,10 @@
             const lines = anno.text.split('\n');
             const lineHeight = anno.fontSize * 1.2;
             
-            const estimatedWidth = anno.text.trim() === '' ? 100 : Math.max(200, ...lines.map(line => ctx.measureText(line).width)); 
+            let estimatedWidth = 100; 
+            lines.forEach(line => {
+                estimatedWidth = Math.max(estimatedWidth, ctx.measureText(line).width);
+            });
             const linesCount = lines.length || 1;
             const estimatedHeight = linesCount * lineHeight;
             
@@ -480,53 +526,54 @@
             const padding = 5; 
 
             return (
-                point.x >= x - padding && point.x <= x + estimatedWidth + padding && 
+                point.x >= x - padding && point.x <= x + estimatedWidth + 5 + padding && 
                 point.y >= y - padding && point.y <= y + estimatedHeight + padding
             );
         }
         return false;
     }
 
-    // --- Text Editing & Activation ---
+    // --- Text Editing & Activation (unchanged) ---
     async function finalizeText() {
         if (!activeAnno || activeAnno.type !== 'text') return;
         
         const newText = annotationInput.value;
         const oldText = activeAnno.text;
+        
+        const canvasToRedraw = activeAnnoCanvas; 
+        const pageNum = activeAnnoPage;
 
-        if (newText !== oldText) { 
+        annotationInput.style.display = 'none';
+        annotationInput.value = '';
+
+        if (newText !== oldText && oldText !== '') { 
             saveState(); 
         }
 
         if (newText.trim() === '') {
-            annotations[activeAnnoPage - 1] = annotations[activeAnnoPage - 1].filter(a => a !== activeAnno);
+            annotations[pageNum - 1] = annotations[pageNum - 1].filter(a => a !== activeAnno);
         } else {
             activeAnno.text = newText;
         }
 
-        const canvasToRerender = activeCanvas; 
-
         activeAnno = null;
         activeAnnoPage = -1;
-        activeCanvas = null;
+        activeAnnoCanvas = null;
         activePageWrapper = null;
         
-        if (canvasToRerender) {
-            await rerenderSinglePage(canvasToRerender, parseInt(canvasToRerender.dataset.pageNum));
+        if (canvasToRedraw) {
+            await redrawAnnotationLayer(canvasToRedraw, pageNum);
         }
-
-        annotationInput.style.display = 'none';
-        annotationInput.value = '';
     }
 
-    function activateTextEdit(anno, pageNum, canvas) {
+    async function activateTextEdit(anno, pageNum, annoCanvas) {
         if (activeAnno) {
-            (async () => { await finalizeText(); })();
+            await finalizeText();
         }
         
-        const pageWrapper = canvas.parentNode;
-        const rect = canvas.getBoundingClientRect();
-        const scaleFactor = rect.width / canvas.width;
+        const pageWrapper = annoCanvas.parentNode;
+        const rect = annoCanvas.getBoundingClientRect();
+        const scaleFactor = rect.width / annoCanvas.width;
         
         pageWrapper.appendChild(annotationInput); 
         
@@ -559,27 +606,28 @@
         
         activeAnno = anno;
         activeAnnoPage = pageNum;
-        activeCanvas = canvas;
+        activeAnnoCanvas = annoCanvas;
         activePageWrapper = pageWrapper;
         
-        rerenderSinglePage(canvas, pageNum);
+        await redrawAnnotationLayer(annoCanvas, pageNum); 
 
         window.requestAnimationFrame(() => {
             annotationInput.focus();
             setTimeout(() => {
-                annotationInput.select();
+                if (anno.text.length > 0) {
+                    annotationInput.select();
+                }
             }, 10);
         });
     }
 
-    // --- Drag Preview Setup (Updated for Signature) ---
-    function setupDragPreview(anno, canvas) {
-        const pageWrapper = canvas.parentNode;
-        const rect = canvas.getBoundingClientRect();
-        const scaleFactor = rect.width / canvas.width;
+    // --- Drag Preview Setup (unchanged) ---
+    function setupDragPreview(anno, annoCanvas) {
+        const pageWrapper = annoCanvas.parentNode;
+        const rect = annoCanvas.getBoundingClientRect();
+        const scaleFactor = rect.width / annoCanvas.width;
 
         if (anno.type === 'signature') {
-            // Added object-fit: contain to maintain aspect ratio in drag preview
             dragPreview.innerHTML = `<img src="${anno.dataUrl}" style="width:100%; height:100%; object-fit: contain;">`;
             dragPreview.style.width = `${anno.w * scaleFactor}px`;
             dragPreview.style.height = `${anno.h * scaleFactor}px`;
@@ -588,7 +636,7 @@
             dragPreview.style.lineHeight = '1px';
             dragPreview.style.border = '1px dashed rgba(0, 0, 0, 0.5)';
             dragPreview.style.background = 'transparent'; 
-        } else { // Text annotation
+        } else { 
             dragPreview.textContent = anno.text;
             dragPreview.style.color = anno.color;
             dragPreview.style.fontSize = `${anno.fontSize}px`;
@@ -607,15 +655,11 @@
         pageWrapper.appendChild(dragPreview);
     }
     
-    // --- Mouse Handlers (Updated for Signature Interaction) ---
-    function handleMouseDown(e, canvas, pageNum) {
-      if (activeAnno) {
-          (async () => { await finalizeText(); })();
-      }
-      
-      if (currentTool !== 'text' && currentTool !== 'delete' && currentTool !== 'highlight') return;
+    // --- Mouse Handlers (unchanged interaction logic) ---
+    async function handleMouseDown(e, annoCanvas, pageNum) {
+      const pos = getCanvasPos(e, annoCanvas);
+      if (!pos) return;
 
-      const pos = getCanvasPos(e, canvas);
       let pageAnnos = annotations[pageNum - 1] || [];
       
       dragAnno = null;
@@ -624,82 +668,83 @@
       dragPreview.style.display = 'none'; 
 
       const clickedAnno = pageAnnos.find(a => 
-          (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, canvas)
+          (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, annoCanvas)
       );
+      
+      if (activeAnno && clickedAnno !== activeAnno) {
+          await finalizeText();
+          pageAnnos = annotations[pageNum - 1] || [];
+      }
       
       // --- DELETE Tool Logic ---
       if (currentTool === 'delete') {
-          if (clickedAnno) {
+          const annoToDelete = pageAnnos.find(a => isInsideAnnotation(pos, a, annoCanvas));
+          if (annoToDelete) {
               saveState();
-              annotations[pageNum - 1] = pageAnnos.filter(a => a !== clickedAnno);
-              rerenderSinglePage(canvas, pageNum);
-          } else {
-             const clickedHighlight = pageAnnos.find(a => 
-                a.type === 'highlight' && isInsideAnnotation(pos, a, canvas)
-             );
-             if (clickedHighlight) {
-                saveState();
-                annotations[pageNum - 1] = pageAnnos.filter(a => a !== clickedHighlight);
-                rerenderSinglePage(canvas, pageNum);
-             }
+              annotations[pageNum - 1] = pageAnnos.filter(a => a !== annoToDelete);
+              await redrawAnnotationLayer(annoCanvas, pageNum); 
           }
           dragStart = null; 
           return; 
       }
 
-      // --- TEXT Tool Logic (and dragging existing signatures) ---
+      // --- TEXT Tool Logic (Drag Existing or Create New) ---
       if (currentTool === 'text') {
         
         if (clickedAnno) {
-            if (clickedAnno.text || clickedAnno.type === 'signature') { 
-                saveState(); // Save state before starting drag to allow undo
+            if (activeAnno !== clickedAnno) { 
+                saveState(); 
                 dragAnno = clickedAnno;
                 dragOffset = {x: pos.x - clickedAnno.x, y: pos.y - clickedAnno.y};
                 
-                setupDragPreview(dragAnno, canvas);
-                rerenderSinglePage(canvas, pageNum); 
+                setupDragPreview(dragAnno, annoCanvas);
+                await redrawAnnotationLayer(annoCanvas, pageNum); 
+            } else {
+                 dragStart = null;
             }
         } else {
-            // Start creating new Text annotation
-            const fontSize = parseInt(fontSizeSelect.value, 10);
-            const newAnno = {
-                type: 'text',
-                x: pos.x,
-                y: pos.y, 
-                color: colorInput.value,
-                text: '', 
-                fontSize: fontSize,
-            };
-            // Note: State is saved when we finalize the edit, or when a drag starts.
-            annotations[pageNum - 1].push(newAnno);
-            dragAnno = newAnno;
-            dragOffset = {x: pos.x - newAnno.x, y: pos.y - newAnno.y};
+            if (!activeAnno) {
+                const fontSize = parseInt(fontSizeSelect.value, 10);
+                const newAnno = {
+                    type: 'text',
+                    x: pos.x,
+                    y: pos.y, 
+                    color: colorInput.value,
+                    text: '', 
+                    fontSize: fontSize,
+                };
+                annotations[pageNum - 1].push(newAnno);
+                dragAnno = newAnno;
+                dragOffset = {x: 0, y: 0}; 
+            }
         }
         return; 
       } 
     }
 
-    function handleMouseMove(e, canvas, pageNum) {
-        const pos = getCanvasPos(e, canvas);
-        const ctx = canvas.getContext('2d');
+    function handleMouseMove(e, annoCanvas, pageNum) {
+        const pos = getCanvasPos(e, annoCanvas);
+        if (!pos) return;
+        
+        const ctx = annoCanvas.getContext('2d');
         
         if (dragStart) {
             dragEnd = pos;
             const distance = Math.sqrt(Math.pow(dragEnd.x - dragStart.x, 2) + Math.pow(dragEnd.y - dragStart.y, 2));
+            
             if (distance > 5) { 
                 isDragging = true;
             }
 
-            if ((currentTool === 'text' || dragAnno && dragAnno.type === 'signature') && dragAnno && isDragging) {
+            if (dragAnno && isDragging) {
                 const newX = dragEnd.x - dragOffset.x;
                 const newY = dragEnd.y - dragOffset.y;
                 
-                // Only update position in dragAnno if it's currently being dragged
                 dragAnno.x = newX;
                 dragAnno.y = newY;
                 
-                const rect = canvas.getBoundingClientRect();
-                const scaleFactor = rect.width / canvas.width;
+                const rect = annoCanvas.getBoundingClientRect();
+                const scaleFactor = rect.width / annoCanvas.width;
                 dragPreview.style.left = `${newX * scaleFactor}px`;
                 dragPreview.style.top = `${newY * scaleFactor}px`;
 
@@ -708,7 +753,7 @@
             
             // Highlight Preview Logic
             if (currentTool === 'highlight') {
-                 rerenderSinglePage(canvas, pageNum).then(() => {
+                 redrawAnnotationLayer(annoCanvas, pageNum).then(() => {
                     if (!dragEnd) return;
                     const x = Math.min(dragStart.x, dragEnd.x);
                     const y = Math.min(dragStart.y, dragEnd.y);
@@ -725,75 +770,63 @@
             }
         }
         
-        // --- Hover Cursor (Updated for Signature) --- 
+        // --- Hover Cursor (unchanged) --- 
         if ((currentTool === 'text' || currentTool === 'delete') && !dragStart && !activeAnno) { 
             const pageAnnos = annotations[pageNum - 1] || [];
             
             const isOverMovable = pageAnnos.find(a => 
-                (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, canvas)
+                (a.type === 'text' || a.type === 'signature') && isInsideAnnotation(pos, a, annoCanvas)
             );
 
             if (currentTool === 'text') {
-                canvas.style.cursor = isOverMovable ? 'move' : 'default';
+                annoCanvas.style.cursor = isOverMovable ? 'move' : 'default';
             } else if (currentTool === 'delete') {
-                const isOverDeletable = pageAnnos.find(a => isInsideAnnotation(pos, a, canvas));
-                canvas.style.cursor = isOverDeletable ? 'pointer' : 'default';
+                const isOverDeletable = pageAnnos.find(a => isInsideAnnotation(pos, a, annoCanvas));
+                annoCanvas.style.cursor = isOverDeletable ? 'pointer' : 'default';
             } else {
-                canvas.style.cursor = 'default';
+                annoCanvas.style.cursor = 'default';
             }
         } else if (currentTool !== 'text' && currentTool !== 'delete') {
-            canvas.style.cursor = 'default';
+            annoCanvas.style.cursor = 'default';
         }
     }
 
-    function handleMouseUp(e, canvas, pageNum) {
+    async function handleMouseUp(e, annoCanvas, pageNum) {
       if (!dragStart) return;
-      dragEnd = getCanvasPos(e, canvas);
-
-      if (currentTool === 'text') { 
-        if (!dragAnno) {
-            dragStart = null;
-            return; 
-        }
-
-        dragPreview.style.display = 'none'; 
-
-        // If dragAnno is a new text box and there was no drag, activate edit
-        if (!isDragging && dragAnno.type === 'text' && dragAnno.text.trim() === '') {
-            const annoToEdit = dragAnno; 
-            dragAnno = null; 
-            // Note: State is not saved here, but when finalizeText() is called.
-            activateTextEdit(annoToEdit, pageNum, canvas);
-            
-            dragStart = null;
-            dragEnd = null;
-            isDragging = false;
+      
+      dragEnd = getCanvasPos(e, annoCanvas); 
+      if (!dragEnd) {
+          dragStart = null;
+          isDragging = false;
+          return;
+      }
+      
+      const wasDragging = isDragging;
+      const currentDragAnno = dragAnno;
+      
+      dragAnno = null;
+      dragStart = null;
+      dragEnd = null;
+      isDragging = false;
+      dragPreview.style.display = 'none'; 
+      
+      if (currentTool === 'text' && currentDragAnno) { 
+        
+        if (!wasDragging && currentDragAnno.type === 'text' && currentDragAnno.text.trim() === '') {
+            await activateTextEdit(currentDragAnno, pageNum, annoCanvas); 
             return;
         }
 
-        // If a drag happened (for existing text or signature), state was saved in mousedown.
-        // If it was a new text annotation that was dragged, we need to save state.
-        if (isDragging) {
-             // If we reached here, the position was updated in mousemove, and state was saved in mousedown (for existing anno) 
-             // or we are just keeping the new, empty anno in place for later editing.
-             // If the anno was new and empty, it needs state saved.
-             if (dragAnno.type === 'text' && dragAnno.text.trim() === '') {
-                 // Nothing to save yet, user will double click or click to start editing
-             } else {
-                 saveState(); // Ensure state is saved after drag if it wasn't a brand new empty box
-             }
+        if (wasDragging && currentDragAnno.type === 'text' && currentDragAnno.text.trim() === '') {
+            await activateTextEdit(currentDragAnno, pageNum, annoCanvas);
+            return;
         }
 
-        dragAnno = null;
-        dragStart = null;
-        dragEnd = null;
-        isDragging = false;
-        
-        rerenderSinglePage(canvas, pageNum);
+        await redrawAnnotationLayer(annoCanvas, pageNum); 
         return;
       }
 
-      // Highlight Logic
+      // Highlight Logic (unchanged)
       if (currentTool === 'highlight') {
         
         const x = Math.min(dragStart.x, dragEnd.x);
@@ -802,7 +835,7 @@
         const finalH = Math.abs(dragEnd.y - dragStart.y); 
 
         if (w > 5 && finalH > 5) {
-            saveState(); // Save state only if a valid highlight was created
+            saveState(); 
             annotations[pageNum - 1].push({
                 type: 'highlight',
                 x, y, w, h: finalH, 
@@ -810,30 +843,47 @@
             });
         }
         
-        dragStart = null;
-        dragEnd = null;
-        isDragging = false;
-        rerenderSinglePage(canvas, pageNum);
+        await redrawAnnotationLayer(annoCanvas, pageNum); 
       }
     }
     
-    function handleClick(e, canvas, pageNum) {
-        // Nothing needed here, most interactions handled by mousedown/mouseup
+    function handleClick(e, annoCanvas, pageNum) {
+        // Nothing needed here
     }
     
-    // --- Signature Drawing Logic ---
-    function setupSignaturePad() {
-        const rect = signaturePadCanvas.getBoundingClientRect();
-        signaturePadCanvas.width = rect.width;
-        signaturePadCanvas.height = rect.height;
+    async function handleDoubleClick(e, annoCanvas, pageNum) {
+        if (activeAnno) {
+            await finalizeText(); 
+            return; 
+        }
 
-        signatureCtx.fillStyle = '#fff';
-        signatureCtx.fillRect(0, 0, signaturePadCanvas.width, signaturePadCanvas.height);
+        if (currentTool !== 'text') return;
+
+        const pos = getCanvasPos(e, annoCanvas);
+        if (!pos) return;
         
-        signatureCtx.strokeStyle = colorInput.value; 
-        signatureCtx.lineWidth = 2;
-        signatureCtx.lineCap = 'round';
-        signatureCtx.lineJoin = 'round';
+        let pageAnnos = annotations[pageNum - 1] || [];
+        
+        const clickedAnno = pageAnnos.find(a => 
+            a.type === 'text' && isInsideAnnotation(pos, a, annoCanvas)
+        );
+        
+        if (clickedAnno) {
+            await activateTextEdit(clickedAnno, pageNum, annoCanvas); 
+        }
+    }
+    
+    // --- Signature Drawing Logic (FIXED/Simplified) ---
+    function setupSignaturePad() {
+        // Use fixed dimensions for drawing consistency
+        signaturePadCanvas.width = 560; 
+        signaturePadCanvas.height = 200; 
+
+        // 1. CLEAR TO TRANSPARENT (Ensures transparent background)
+        signatureCtx.clearRect(0, 0, signaturePadCanvas.width, signaturePadCanvas.height); 
+        
+        // Reset state
+        isDrawing = false; 
     }
 
     function draw(e) {
@@ -851,36 +901,67 @@
         const rect = signaturePadCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
+        
+        // Scale client coordinates to the actual canvas drawing resolution (560x200)
+        const scaleX = signaturePadCanvas.width / rect.width;
+        const scaleY = signaturePadCanvas.height / rect.height;
+        
+        const x = (clientX - rect.left) * scaleX;
+        const y = (clientY - rect.top) * scaleY;
+        
         [lastX, lastY] = [x, y];
+        
+        // ********** 关键修复：即时应用样式，确保可见性 **********
+        const selectedFontSize = parseInt(fontSizeSelect.value, 10);
+        // Map font size (e.g., 14, 18, 24) to line width, ensuring a minimum of 2
+        const calculatedLineWidth = Math.max(2, selectedFontSize / 6); 
+        
+        signatureCtx.strokeStyle = colorInput.value; // 应用选中的颜色
+        signatureCtx.lineWidth = calculatedLineWidth; // 应用计算出的粗细
+        signatureCtx.lineCap = 'round';
+        signatureCtx.lineJoin = 'round';
+        
+        // 确保起始点是可见的（绘制一个点）
+        signatureCtx.beginPath();
+        signatureCtx.arc(x, y, signatureCtx.lineWidth / 2, 0, 2 * Math.PI, false); 
+        signatureCtx.fillStyle = signatureCtx.strokeStyle; // 使用描边颜色填充点
+        signatureCtx.fill();
+        // ******************************************************
+
         e._x = x;
         e._y = y;
-        draw(e);
     }
     
     function handleSignatureMove(e) {
         if (!isDrawing) return;
+        
         const rect = signaturePadCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        e._x = clientX - rect.left;
-        e._y = clientY - rect.top;
+        
+        // Scale client coordinates to the actual canvas drawing resolution (560x200)
+        const scaleX = signaturePadCanvas.width / rect.width;
+        const scaleY = signaturePadCanvas.height / rect.height;
+        
+        e._x = (clientX - rect.left) * scaleX;
+        e._y = (clientY - rect.top) * scaleY;
         draw(e);
     }
 
     function handleSignatureEnd() {
-        isDrawing = false;
-        signatureCtx.closePath();
+        if (isDrawing) {
+            isDrawing = false;
+        }
     }
     
+    // Use passive: false for touch events to allow preventDefault on drawing
     signaturePadCanvas.addEventListener('mousedown', handleSignatureStart);
     signaturePadCanvas.addEventListener('mousemove', handleSignatureMove);
     signaturePadCanvas.addEventListener('mouseup', handleSignatureEnd);
     signaturePadCanvas.addEventListener('mouseout', handleSignatureEnd);
 
-    signaturePadCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleSignatureStart(e); });
-    signaturePadCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleSignatureMove(e); });
+    signaturePadCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleSignatureStart(e); }, { passive: false });
+    signaturePadCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleSignatureMove(e); }, { passive: false });
     signaturePadCanvas.addEventListener('touchend', handleSignatureEnd);
 
 
@@ -908,7 +989,8 @@
 
         const firstVisiblePageWrapper = Array.from(pdfViewerWrapper.children).find(el => {
             const rect = el.getBoundingClientRect();
-            return rect.top >= 0 && rect.top <= window.innerHeight;
+            // Check if the page is at least partially visible
+            return rect.top < window.innerHeight && rect.bottom > 0;
         });
 
         if (!firstVisiblePageWrapper) {
@@ -916,21 +998,55 @@
             return;
         }
 
-        const canvas = firstVisiblePageWrapper.querySelector('.pdfCanvas');
-        const pageNum = parseInt(canvas.dataset.pageNum, 10);
+        // --- Use annoCanvas for placement ---
+        const annoCanvas = firstVisiblePageWrapper.querySelector('.annoCanvas');
+        const pageNum = parseInt(annoCanvas.dataset.pageNum, 10);
         
-        // Get PNG Data URL
+        // Check if the pad is empty
+        const imageData = signatureCtx.getImageData(0, 0, signaturePadCanvas.width, signaturePadCanvas.height).data;
+        let isEmpty = true;
+        // Check if there are any non-transparent pixels (i.e., drawn content)
+        for (let i = 3; i < imageData.length; i += 4) { // Start checking from Alpha channel
+            if (imageData[i] !== 0) { 
+                isEmpty = false;
+                break;
+            }
+        }
+        
+        if (isEmpty) {
+            alert('Please draw your signature before saving.');
+            return;
+        }
+        
+        // IMPORTANT: toDataURL('image/png') preserves the alpha channel (transparency)
         const dataUrl = signaturePadCanvas.toDataURL('image/png');
         
-        // Default size for placement: 150x50 (in PDF canvas units, scale=1.5)
         const defaultWidth = 150;
         const defaultHeight = 50;
-        const pos = getCanvasPos({clientX: canvas.getBoundingClientRect().left + 50, clientY: canvas.getBoundingClientRect().top + 50}, canvas);
+        
+        const canvasRect = annoCanvas.getBoundingClientRect();
+        
+        // Calculate the scale factor between the CSS display size and the Canvas resolution
+        const scaleFactor = annoCanvas.width / canvasRect.width; 
+        
+        // Center placement on the visible screen area
+        const screenCenterX = window.innerWidth / 2;
+        const screenCenterY = window.innerHeight / 2;
+        
+        // Calculate canvas coordinates for placement
+        // 1. Get the center point relative to the page wrapper (in CSS pixels)
+        const wrapperRect = firstVisiblePageWrapper.getBoundingClientRect();
+        const centerCssX = screenCenterX - wrapperRect.left;
+        const centerCssY = screenCenterY - wrapperRect.top;
+        
+        // 2. Convert CSS pixels to Canvas native pixels
+        const x = (centerCssX - (defaultWidth / 2)) * scaleFactor;
+        const y = (centerCssY - (defaultHeight / 2)) * scaleFactor;
 
         const newAnno = {
             type: 'signature',
-            x: pos.x,
-            y: pos.y, 
+            x: x,
+            y: y, 
             w: defaultWidth, 
             h: defaultHeight,
             dataUrl: dataUrl
@@ -939,8 +1055,6 @@
         saveState();
         annotations[pageNum - 1].push(newAnno);
         
-        // CRITICAL FIX: Add the image to the cache immediately and wait for it to load.
-        // This makes sure the subsequent rerenderSinglePage draws the image synchronously.
         const img = new Image();
         img.src = dataUrl;
         signatureImageCache.set(dataUrl, img);
@@ -950,19 +1064,18 @@
         }); 
 
         signatureModal.style.display = 'none';
-        rerenderSinglePage(canvas, pageNum);
+        await redrawAnnotationLayer(annoCanvas, pageNum);
         setTool(toolTextBtn, 'text'); 
     }
 
 
-    // --- Core PDF Functions ---
+    // --- Core PDF Functions (unchanged) ---
     async function openPdfFromFile(file) {
-      try { // ADDED try block for better debugging feedback
+      try { 
         const arrayBuffer = await file.arrayBuffer();
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         pdfDoc = await loadingTask.promise;
         
-        // Clear all state including the image cache
         annotations = Array.from({ length: pdfDoc.numPages }, () => []);
         signatureImageCache.clear();
         history = [];
@@ -986,54 +1099,69 @@
       await openPdfFromFile(file);
     });
     
-    // Mouse -> canvas coordinate conversion
+    // Robust Mouse/Touch -> canvas coordinate conversion (unchanged)
     function getCanvasPos(evt, canvas) {
       const rect = canvas.getBoundingClientRect();
-      const x = (evt.clientX - rect.left) * (canvas.width / rect.width);
-      const y = (evt.clientY - rect.top) * (canvas.height / rect.height);
+      let clientX, clientY;
+
+      if (evt.touches && evt.touches.length > 0) {
+        clientX = evt.touches[0].clientX;
+        clientY = evt.touches[0].clientY;
+      } else if (evt.changedTouches && evt.changedTouches.length > 0) {
+        clientX = evt.changedTouches[0].clientX;
+        clientY = evt.changedTouches[0].clientY;
+      } else if (evt.clientX !== undefined) {
+        clientX = evt.clientX;
+        clientY = evt.clientY;
+      } else {
+        return null; 
+      }
+
+      const x = (clientX - rect.left) * (canvas.width / rect.width);
+      const y = (clientY - rect.top) * (canvas.height / rect.height);
       return { x, y };
     }
     
-    function handleDoubleClick(e, canvas, pageNum) {
-        if (activeAnno) {
-            (async () => { await finalizeText(); })(); 
-            return; 
-        }
-
-        if (currentTool !== 'text') return;
-
-        const pos = getCanvasPos(e, canvas);
-        let pageAnnos = annotations[pageNum - 1] || [];
+    // --- Page Event Listeners (unchanged) ---
+    function addPageEventListeners(annoCanvas) { 
+        const pageNum = parseInt(annoCanvas.dataset.pageNum);
         
-        const clickedAnno = pageAnnos.find(a => 
-            a.type === 'text' && a.text.trim() !== '' && isInsideAnnotation(pos, a, canvas)
-        );
-        
-        if (clickedAnno) {
-            activateTextEdit(clickedAnno, pageNum, canvas);
-        }
-    }
+        const asyncHandler = (handler) => (e) => {
+            if (e.type === 'touchmove') {
+                if (isDragging || currentTool === 'highlight' || (dragAnno && dragAnno.type === 'signature')) {
+                    e.preventDefault(); 
+                }
+            }
 
-    // --- Page Event Listeners ---
-    function addPageEventListeners(canvas) {
-        const pageNum = parseInt(canvas.dataset.pageNum);
+            handler(e, annoCanvas, pageNum).catch(err => {
+                if (err.message && err.message.includes('Cannot use the same canvas during multiple render() operations')) {
+                } else {
+                     console.error('Unhandled async error in event listener:', err);
+                }
+            });
+        };
         
-        canvas.addEventListener('mousedown', (e) => handleMouseDown(e, canvas, pageNum));
-        canvas.addEventListener('mousemove', (e) => handleMouseMove(e, canvas, pageNum));
-        canvas.addEventListener('mouseup', (e) => handleMouseUp(e, canvas, pageNum));
-        canvas.addEventListener('mouseout', () => { canvas.style.cursor = 'default'; });
-        canvas.addEventListener('click', (e) => handleClick(e, canvas, pageNum));
-        canvas.addEventListener('dblclick', (e) => handleDoubleClick(e, canvas, pageNum)); 
+        annoCanvas.addEventListener('mousedown', asyncHandler(handleMouseDown));
+        annoCanvas.addEventListener('mousemove', (e) => handleMouseMove(e, annoCanvas, pageNum)); 
+        annoCanvas.addEventListener('mouseup', asyncHandler(handleMouseUp));
+        annoCanvas.addEventListener('mouseout', () => { annoCanvas.style.cursor = 'default'; });
+        annoCanvas.addEventListener('click', (e) => handleClick(e, annoCanvas, pageNum));
+        annoCanvas.addEventListener('dblclick', asyncHandler(handleDoubleClick)); 
+
+        annoCanvas.addEventListener('touchstart', asyncHandler(handleMouseDown));
+        annoCanvas.addEventListener('touchmove', (e) => handleMouseMove(e, annoCanvas, pageNum));
+        annoCanvas.addEventListener('touchend', asyncHandler(handleMouseUp));
     }
     
-    // --- Undo/Redo implementations ---
+    // --- Undo/Redo implementations (unchanged) ---
     async function performUndo() {
         if (history.length > 1) {
             if (activeAnno) await finalizeText(); 
 
             const currentState = history.pop();
             redoHistory.push(currentState);
-            annotations = history[history.length - 1]; 
+            annotations = JSON.parse(JSON.stringify(history[history.length - 1])); 
+            
             await renderAllPages(); 
             updateHistoryButtons();
         }
@@ -1066,7 +1194,7 @@
         }
     });
 
-    // --- Go To Page Logic ---
+    // --- Go To Page Logic (unchanged) ---
     function goToPage(pageNum) {
         if (activeAnno) {
              (async () => { await finalizeText(); })();
@@ -1103,7 +1231,7 @@
         }
     });
 
-    // --- Download (Updated for Signature) ---
+    // --- Download (unchanged) ---
     async function applyAnnotationsAndDownload() {
       if (!pdfDoc) return;
       
