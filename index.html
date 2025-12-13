@@ -265,7 +265,7 @@
       </select>
 	  <button id="undoBtn" disabled title="Undo">↩️</button>
       <button id="redoBtn" disabled title="Redo">↪️</button>
-      <button id="downloadBtn" disabled title="Download">⬇️ Download PDF</button>
+      <button id="downloadBtn" disabled title="Download">⬇️</button>
     </div>
   </div>
 
@@ -776,9 +776,13 @@
                 maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
             });
             
+            // NEW: 确保最小点击区域，以方便移动端手指操作
+            const minW = 50; 
+            const minH = anno.fontSize * 1.2; 
+
             // Text bounding box: x, y (top) to x + width, y + height
-            const textWidth = maxWidth + 5;
-            const textHeight = lines.length * lineHeight + 5;
+            const textWidth = Math.max(maxWidth + 5, minW); // 宽度至少为 50px
+            const textHeight = Math.max(lines.length * lineHeight + 5, minH); // 高度至少为一行文本高度
 
             return point.x >= anno.x && point.x <= anno.x + textWidth && 
                    point.y >= anno.y && point.y <= anno.y + textHeight;
@@ -966,7 +970,7 @@
             dragPreview.style.left = `${dragAnno.x * scaleFactor}px`;
             dragPreview.style.top = `${dragAnno.y * scaleFactor}px`;
 			
-			e.preventDefault();
+			<!-- e.preventDefault(); -->
 			
             return;
         }
@@ -1675,7 +1679,7 @@
             console.error("PDF Download Error:", error);
             alert("Error generating annotated PDF. Please check the browser console (F12) for details.");
         } finally {
-            downloadBtn.textContent = '⬇️ Download PDF';
+            downloadBtn.textContent = '⬇️';
             downloadBtn.disabled = false;
         }
     };
