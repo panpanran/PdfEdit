@@ -248,24 +248,31 @@
         text-align: right;
     }
 
-    /* 移动设备响应式优化 */
-    @media (max-width: 600px) {
-        body { margin: 8px; }
-        .toolbar { flex-direction: column; gap: 12px; align-items: flex-start; }
-        .row, .page-controls, .tools { width: 100%; box-sizing: border-box; }
-        .tools { flex-wrap: wrap; flex-direction: row; gap: 6px; }
-        .tools button { flex-grow: 1; min-width: 36px; max-width: none; } /* 移动端放开 max-width */
-        .tools input[type="color"] { width: 36px; height: 36px; padding: 2px; flex-grow: 0; }
-        #fontSize { width: 60px; flex-grow: 0; }
-        .page-controls { flex-wrap: wrap; gap: 8px; }
-        .page-controls input { width: 60px !important; }
-        .page-wrapper { width: 100% !important; max-width: 100%; }
-        .pdfCanvas, .annoCanvas, .textLayer {
-            width: 100% !important; 
-            height: auto !important; 
-            max-width: 100%;
-        }
-    }
+	/* 移动设备响应式优化 */
+	@media (max-width: 1200px) { /* 将 600px 扩大到 1200px 左右，覆盖绝大多数平板和笔记本电脑 */
+		body { margin: 8px; }
+		.toolbar { flex-direction: column; gap: 12px; align-items: flex-start; }
+		.row, .page-controls, .tools { width: 100%; box-sizing: border-box; }
+		.tools { flex-wrap: wrap; flex-direction: row; gap: 6px; }
+		.tools button { flex-grow: 1; min-width: 36px; max-width: none; }
+		.tools input[type="color"] { width: 36px; height: 36px; padding: 2px; flex-grow: 0; }
+		#fontSize { width: 60px; flex-grow: 0; }
+		.page-controls { flex-wrap: wrap; gap: 8px; }
+		.page-controls input { width: 60px !important; }
+		
+		/* 核心修改：强制 PDF 容器和 Canvas 宽度 100% 适配父容器 */
+		.page-wrapper { 
+			width: 100% !important; 
+			max-width: 100%; 
+			/* 移除 style="width: ${canvas.width}px;" 带来的固定像素限制 */
+			/* PDF 渲染的 canvas 像素尺寸（canvas.width/height）不变，但其 display 尺寸（width/height）将由 CSS 控制 */
+		}
+		.pdfCanvas, .annoCanvas, .textLayer {
+			width: 100% !important; 
+			height: auto !important; 
+			max-width: 100%;
+		}
+	}
     
   </style>
   <meta name="google-adsense-account" content="ca-pub-7563681675733550">
@@ -651,10 +658,6 @@
         annoCanvas.dataset.pageNum = i;
         annoCanvas.width = canvas.width;
         annoCanvas.height = canvas.height;
-        
-        // Set dimensions for the wrapper
-        pageWrapper.style.width = `${canvas.width}px`;
-        pageWrapper.style.height = `${canvas.height}px`;
 
         const context = canvas.getContext('2d');
         const renderContext = {
