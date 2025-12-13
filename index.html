@@ -482,8 +482,26 @@
     bindToolButton(toolDeleteBtn, 'delete');
     bindToolButton(toolSignatureBtn, 'signature');
 
+    function isMobileDevice() {
+        // 检查常见的移动设备用户代理字符串 或 检查是否存在触摸事件支持
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         toolMouseBtn.click(); // 默认启用鼠标工具
+        
+        // NEW: 如果是移动设备，隐藏 Select Text 和 Highlight 工具
+        if (isMobileDevice()) {
+            toolSelectTextBtn.style.display = 'none';
+            toolHighlightBtn.style.display = 'none';
+            
+            // 简化提示信息
+            const hintElement = document.querySelector('.hint');
+            if (hintElement) {
+                 // 移除与 Select Text (I) 和 Highlight (🖍️) 相关的内容
+                 hintElement.innerHTML = 'Tip: Use arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. T = click to place, DOUBLE-CLICK to edit, drag to move. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.';
+            }
+        }
     });
 
     // --- History Functions (omitted for brevity, assume unchanged) ---
