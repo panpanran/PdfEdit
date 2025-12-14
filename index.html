@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>PDF Upload, Inline Annotation & Download</title>
+  <title id="appTitle">PDF Upload, Inline Annotation & Download</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
 	  /* NEW: Top Bar Notification Styles (Modified for Bootstrap-like Alert) */
@@ -281,23 +281,23 @@
      crossorigin="anonymous"></script>
 </head>
 <body>
-  <h2>PDF Upload, Inline Annotation & Download</h2>
+  <h2 id="mainHeading">PDF Upload, Inline Annotation & Download</h2>
 
   <div class="toolbar">
     <div class="row">
-      <span class="label">Choose PDF:</span>
+      <span class="label" id="labelChoosePdf">Choose PDF:</span>
       <input type="file" id="fileInput" accept="application/pdf" />
     </div>
     
     <div class="page-controls">
-      <span class="label">Total Pages: <span id="pageCount">0</span></span>
-      <label for="pageInput">Go to Page:</label>
+      <span class="label"><span id="labelTotalPages">Total Pages</span>: <span id="pageCount">0</span></span>
+      <label for="pageInput" id="labelGoToPage">Go to Page:</label>
       <input type="number" id="pageInput" min="1" value="1" style="width: 50px;" disabled />
       <button id="goToPageBtn" disabled title="Go">➡️</button>
     </div>
 
     <div class="tools">
-      <span class="label">Tools:</span>
+      <span class="label" id="labelTools">Tools:</span>
       <button id="toolMouse" title="Select/Move">🖱️</button> 
       <button id="toolSelectText" title="Select Text">I</button> 
       <button id="toolText" title="Add Text">T</button>
@@ -318,7 +318,7 @@
     </div>
   </div>
 
-  <div class="hint">Tip: Use mouse wheel or arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. I = Select text on the PDF (I-beam cursor). T = click to place, DOUBLE-CLICK to edit, drag to move. 🖍️ = select text to highlight. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.</div>
+  <div id="appHint" class="hint"></div>
 
   <div id="pdf-viewer-wrapper">
     </div>
@@ -328,7 +328,7 @@
   
   <div id="signatureModal">
       <div id="signatureContent">
-          <h3>Draw Your Signature</h3>
+          <h3 id="modalTitle">Draw Your Signature</h3>
           <canvas id="signaturePadCanvas" width="560" height="200"></canvas>
           <div class="modal-buttons">
               <button id="clearSignatureBtn">Clear</button>
@@ -368,8 +368,100 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc =
         './js/pdf.worker.min.js';
     }
+    
+    // --- Localization and Utility Functions ---
+    // NEW: 微信环境检测函数
+    function isWeChat() {
+        return /MicroMessenger/i.test(navigator.userAgent);
+    }
 
-    // --- 修复: 确保所有变量在被使用前都被正确定义和赋值 ---
+    function getSystemLanguage() {
+        let lang = (navigator.language || navigator.userLanguage).toLowerCase();
+        // 简化为 zh 或 en
+        if (lang.startsWith('zh')) return 'zh';
+        return 'en'; 
+    }
+
+    const translations = {
+        'zh': {
+            'title': 'PDF 上传、内联注释与下载',
+            'choose_pdf': '选择 PDF',
+            'total_pages': '总页数',
+            'go_to_page': '跳转到页码',
+            'go_btn': '跳转',
+            'tools': '工具',
+            'tool_mouse_title': '选择/移动',
+            'tool_select_text_title': '选择文本',
+            'tool_text_title': '添加文本',
+            'tool_highlight_title': '高亮',
+            'tool_signature_title': '签名',
+            'tool_delete_title': '删除',
+            'tool_color_title': '颜色',
+            'tool_undo_title': '撤销',
+            'tool_redo_title': '重做',
+            'tool_download_title': '下载',
+            'tip_desktop': '提示: 使用鼠标滚轮或方向键翻页。🖱️ = 选择/移动现有文本或签名。I = 选择 PDF 上的文本。T = 点击放置，双击编辑，拖动移动。🖍️ = 选择文本高亮。✍️ = 打开签名板。🗑️ = 点击注释删除。',
+            'tip_mobile': '提示: 使用方向键翻页。🖱️ = 选择/移动现有文本或签名。T = 点击放置，双击编辑，拖动移动。✍️ = 打开签名板。🗑️ = 点击注释删除。',
+            'generating': '正在生成...',
+            'new_text': '新文本',
+            'draw_signature': '绘制签名',
+            'clear': '清除',
+            'save_place': '保存并放置',
+            'cancel': '取消',
+            'alert_signature_missing': '签名板为空。请绘制您的签名。',
+            'alert_page_invalid': (numPages) => `请输入一个介于 1 和 ${numPages} 之间的有效页码。`,
+            'notification_upload_first': '请先上传一个 PDF 文件。',
+            'notification_download_failed': '文件下载失败...请点击此栏发送邮件给管理员',
+            'alert_pdf_error': '加载 PDF 出错。请检查浏览器控制台 (F12) 查看详情。',
+            'notification_download_success_prefix': "' ",
+            'notification_download_success_suffix': " ' 已成功下载！点击打开。",
+            // NEW WeChat specific string
+            'download_success_wechat_hint': '文件已成功生成！微信环境无法直接下载，请点击右上角菜单 -> 在浏览器中打开，然后在外部浏览器中再次点击下载。',
+            'alert_signature_pos_missing': '签名放置位置缺失。',
+        },
+        'en': {
+            'title': 'PDF Upload, Inline Annotation & Download',
+            'choose_pdf': 'Choose PDF',
+            'total_pages': 'Total Pages',
+            'go_to_page': 'Go to Page',
+            'go_btn': 'Go',
+            'tools': 'Tools',
+            'tool_mouse_title': 'Select/Move',
+            'tool_select_text_title': 'Select Text',
+            'tool_text_title': 'Add Text',
+            'tool_highlight_title': 'Highlight',
+            'tool_signature_title': 'Signature',
+            'tool_delete_title': 'Delete',
+            'tool_color_title': 'Color',
+            'tool_undo_title': 'Undo',
+            'tool_redo_title': 'Redo',
+            'tool_download_title': 'Download',
+            'tip_desktop': 'Tip: Use mouse wheel or arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. I = Select text on the PDF (I-beam cursor). T = click to place, DOUBLE-CLICK to edit, drag to move. 🖍️ = select text to highlight. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.',
+            'tip_mobile': 'Tip: Use arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. T = click to place, DOUBLE-CLICK to edit, drag to move. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.',
+            'generating': 'Generating...',
+            'new_text': 'New Text',
+            'draw_signature': 'Draw Your Signature',
+            'clear': 'Clear',
+            'save_place': 'Save and Place',
+            'cancel': 'Cancel',
+            'alert_signature_missing': 'The signature pad is empty. Please draw your signature.',
+            'alert_page_invalid': (numPages) => `Please enter a valid page number between 1 and ${numPages}.`,
+            'notification_upload_first': 'Please upload a PDF first.',
+            'notification_download_failed': 'File download failed...Please click this bar to send email to administrator',
+            'alert_pdf_error': 'Error loading PDF. Please check the browser console (F12) for details.',
+            'notification_download_success_prefix': "' ",
+            'notification_download_success_suffix': " ' is downloaded successfully! Click to open.",
+            // NEW WeChat specific string
+            'download_success_wechat_hint': 'File successfully generated! Direct download failed in WeChat. Please tap the menu icon -> Open in Browser, then click Download again in the external browser.',
+            'alert_signature_pos_missing': 'Signature placement position is missing.',
+        }
+    };
+
+    const lang = getSystemLanguage();
+    const langStrings = translations[lang] || translations['en']; 
+
+    // --- DOM Elements & Variable Initialization ---
+    // ... (保持原有的元素获取和变量定义不变) ...
     const fileInput = document.getElementById('fileInput');
     const pdfViewerWrapper = document.getElementById('pdf-viewer-wrapper');
     const pageCountSpan = document.getElementById('pageCount');
@@ -526,16 +618,47 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        // --- Apply Translations to Static HTML Elements ---
+        document.getElementById('appTitle').textContent = langStrings['title'];
+        document.getElementById('mainHeading').textContent = langStrings['title'];
+        document.getElementById('labelChoosePdf').textContent = langStrings['choose_pdf'] + ':';
+        document.getElementById('labelTotalPages').textContent = langStrings['total_pages'];
+        document.getElementById('labelGoToPage').textContent = langStrings['go_to_page'] + ':';
+        
+        document.getElementById('labelTools').textContent = langStrings['tools'] + ':';
+
+        toolMouseBtn.title = langStrings['tool_mouse_title'];
+        toolSelectTextBtn.title = langStrings['tool_select_text_title'];
+        toolTextBtn.title = langStrings['tool_text_title'];
+        toolHighlightBtn.title = langStrings['tool_highlight_title'];
+        toolSignatureBtn.title = langStrings['tool_signature_title'];
+        toolDeleteBtn.title = langStrings['tool_delete_title'];
+        colorInput.title = langStrings['tool_color_title'];
+        undoBtn.title = langStrings['tool_undo_title'];
+        redoBtn.title = langStrings['tool_redo_title'];
+        downloadBtn.title = langStrings['tool_download_title'];
+        
+        // Signature Modal
+        document.getElementById('modalTitle').textContent = langStrings['draw_signature'];
+        document.getElementById('clearSignatureBtn').textContent = langStrings['clear'];
+        document.getElementById('saveSignatureBtn').textContent = langStrings['save_place'];
+        document.getElementById('closeSignatureBtn').textContent = langStrings['cancel'];
+        
+        // Hint text
+        const hintElement = document.getElementById('appHint');
+        
         toolMouseBtn.click(); // 默认启用鼠标工具
         
         // NEW: 如果是移动设备，隐藏 Select Text 和 Highlight 工具
         if (isMobileDevice()) {
             toolSelectTextBtn.style.display = 'none';
             toolHighlightBtn.style.display = 'none';
-            
-            const hintElement = document.querySelector('.hint');
             if (hintElement) {
-                 hintElement.innerHTML = 'Tip: Use arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. T = click to place, DOUBLE-CLICK to edit, drag to move. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.';
+                 hintElement.innerHTML = langStrings['tip_mobile'];
+            }
+        } else {
+             if (hintElement) {
+                 hintElement.innerHTML = langStrings['tip_desktop'];
             }
         }
     });
@@ -961,7 +1084,7 @@
                 x: pos.x,
                 y: pos.y,
                 color: colorInput.value,
-                text: 'New Text',
+                text: langStrings['new_text'], // Use translated text
                 fontSize: fontSize,
             };
             saveState();
@@ -1294,7 +1417,7 @@
 
     async function saveAndPlaceSignature() {
         if (!signaturePlacementPos || signaturePlacementPageNum === -1) {
-            alert("Signature placement position is missing.");
+            alert(langStrings['alert_signature_pos_missing']); // Use translated text
             return;
         }
         
@@ -1309,7 +1432,7 @@
 
         const isEmpty = isCanvasEmpty(signaturePadCanvas, signatureCtx);
         if (isEmpty) {
-            alert("The signature pad is empty. Please draw your signature.");
+            alert(langStrings['alert_signature_missing']); // Use translated text
             return;
         }
         
@@ -1368,7 +1491,7 @@
             downloadBtn.disabled = false;
         } catch (error) {
             console.error("PDF Loading Error:", error);
-            alert("Error loading PDF. Please check the browser console (F12) for details.");
+            alert(langStrings['alert_pdf_error']); // Use translated text
             pdfViewerWrapper.innerHTML = 'PDF loading failed.';
             pdfDoc = null;
             downloadBtn.disabled = true;
@@ -1442,8 +1565,8 @@
         const pageNum = parseInt(pageInput.value, 10);
         if (pdfDoc && pageNum >= 1 && pageNum <= pdfDoc.numPages) {
             goToPage(pageNum);
-        } else {
-            alert(`Please enter a valid page number between 1 and ${pdfDoc.numPages}`);
+        } else if (pdfDoc) {
+            alert(langStrings['alert_page_invalid'](pdfDoc.numPages)); // Use translated text
             pageInput.value = 1;
         }
     };
@@ -1519,189 +1642,165 @@
     }
 
 
-    // --- Download PDF Logic (FIXED) ---
-    // --- Download PDF Logic (最终修正版) ---
-	downloadBtn.onclick = async () => {
-		
-		// 禁用下载按钮并显示加载中状态
-		downloadBtn.disabled = true;
-		downloadBtn.textContent = 'Generating...';
-		
-		// 确保有文件上传（使用 langStrings 进行翻译）
-		if (!pdfDoc) {
-			showTopNotification(langStrings['notification_upload_first'], 'failure', 4000);
-			downloadBtn.textContent = '⬇️';
-			downloadBtn.disabled = false;
-			return;
-		}
-		
-		// 确保活动文本框被最终确定
-		if (activeAnno) {
-			await finalizeText();
-		}
-		
-		try {
-			// --- PDF 生成逻辑 (保持您原有的代码不变) ---
-			if (!originalFile) {
-				throw new Error("Original PDF file reference is missing.");
-			}
-			
-			const originalPdfBytes = await originalFile.arrayBuffer();
-			const pdf = await pdfLib.PDFDocument.load(originalPdfBytes);
-			const pages = pdf.getPages();
-			const font = await pdf.embedFont(pdfLib.StandardFonts.Helvetica);
+    // --- Download PDF Logic (FINAL WeChat-aware) ---
+    downloadBtn.onclick = async () => {
+        if (!pdfDoc) {
+            showTopNotification(langStrings['notification_upload_first'], 'failure', 4000);
+            return;
+        }
+        if (activeAnno) {
+            await finalizeText();
+        }
+        
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = langStrings['generating']; // Use translated text
 
-			const signatureEmbedPromises = [];
+        try {
+            if (!originalFile) {
+                throw new Error("Original PDF file reference is missing.");
+            }
+            const originalPdfBytes = await originalFile.arrayBuffer();
+            const pdf = await pdfLib.PDFDocument.load(originalPdfBytes);
+            const pages = pdf.getPages();
+            const font = await pdf.embedFont(pdfLib.StandardFonts.Helvetica);
 
-			for (let i = 0; i < pages.length; i++) {
-				const page = pages[i];
-				const pageAnnos = annotations[i] || [];
-				const pageHeight = page.getHeight();
-				
-				const currentPageCanvas = document.querySelector(`#page-wrapper-${i + 1} .pdfCanvas`);
-				if (!currentPageCanvas) {
-					console.error(`Canvas for page ${i + 1} not found, skipping annotations for this page.`);
-					continue; 
-				}
-				
-				const scaleX = page.getWidth() / currentPageCanvas.width;
-				const scaleY = page.getHeight() / currentPageCanvas.height;
-				
-				pageAnnos.forEach(a => {
-					// ... (省略所有 drawText, drawImage, drawRectangle 的逻辑，保持与您当前文件一致) ...
-					if (a.type === 'text') {
-						const lines = a.text.split('\n');
-						const lineHeight = a.fontSize * 1.2;
-						
-						lines.forEach((line, index) => {
-							const x = a.x * scaleX;
-							const yTopCanvas = a.y + a.fontSize + index * lineHeight; 
-							const y = pageHeight - (yTopCanvas * scaleY);
+            const signatureEmbedPromises = [];
 
-							const [r01, g01, b01] = parseColorToRgb01(a.color);
+            for (let i = 0; i < pages.length; i++) {
+                const page = pages[i];
+                const pageAnnos = annotations[i] || [];
+                const pageHeight = page.getHeight();
+                
+                const currentPageCanvas = document.querySelector(`#page-wrapper-${i + 1} .pdfCanvas`);
+                if (!currentPageCanvas) {
+                    console.error(`Canvas for page ${i + 1} not found, skipping annotations for this page.`);
+                    continue; 
+                }
+                
+                const scaleX = page.getWidth() / currentPageCanvas.width;
+                const scaleY = page.getHeight() / currentPageCanvas.height;
+                
+                pageAnnos.forEach(a => {
+                    if (a.type === 'text') {
+                        const lines = a.text.split('\n');
+                        const lineHeight = a.fontSize * 1.2;
+                        
+                        lines.forEach((line, index) => {
+                            const x = a.x * scaleX;
+                            const yTopCanvas = a.y + a.fontSize + index * lineHeight; 
+                            const y = pageHeight - (yTopCanvas * scaleY);
 
-							if (hasNonAscii(line)) {
-								signatureEmbedPromises.push(async () => {
-									const dataUrl = makeTextPngDataUrl(line, a.fontSize, a.color, currentPageCanvas.width);
-									const pngImage = await pdf.embedPng(dataUrl);
+                            const [r01, g01, b01] = parseColorToRgb01(a.color);
 
-									const imgW = pngImage.width * scaleX;
-									const imgH = pngImage.height * scaleY;
+                            if (hasNonAscii(line)) {
+                                signatureEmbedPromises.push(async () => {
+                                    const dataUrl = makeTextPngDataUrl(line, a.fontSize, a.color, currentPageCanvas.width);
+                                    const pngImage = await pdf.embedPng(dataUrl);
 
-									const yTopTextCanvas = a.y + index * lineHeight; 
-									const yImg = pageHeight - ((yTopTextCanvas + pngImage.height) * scaleY);
+                                    const imgW = pngImage.width * scaleX;
+                                    const imgH = pngImage.height * scaleY;
 
-									page.drawImage(pngImage, {
-										x: x,
-										y: yImg,
-										width: imgW,
-										height: imgH,
-										opacity: 1.0,
-									});
-								});
-							} else {
-								page.drawText(line, {
-									x: x,
-									y: y,
-									font: font,
-									size: a.fontSize * scaleX, 
-									color: pdfLib.rgb(r01, g01, b01),
-								});
-							}
-						});
-					} else if (a.type === 'highlight') {
-						const [r, g, b] = parseColorToRgb01(a.color);
+                                    const yTopTextCanvas = a.y + index * lineHeight; 
+                                    const yImg = pageHeight - ((yTopTextCanvas + pngImage.height) * scaleY);
 
-						const x = a.x * scaleX;
-						const yTopCanvas = a.y; 
-						const y = pageHeight - ((yTopCanvas + a.h) * scaleY); 
-						const w = a.w * scaleX;
-						const h = a.h * scaleY;
+                                    page.drawImage(pngImage, {
+                                        x: x,
+                                        y: yImg,
+                                        width: imgW,
+                                        height: imgH,
+                                        opacity: 1.0,
+                                    });
+                                });
+                            } else {
+                                page.drawText(line, {
+                                    x: x,
+                                    y: y,
+                                    font: font,
+                                    size: a.fontSize * scaleX, 
+                                    color: pdfLib.rgb(r01, g01, b01),
+                                });
+                            }
+                        });
+                    } else if (a.type === 'highlight') {
+                        const [r, g, b] = parseColorToRgb01(a.color);
 
-						page.drawRectangle({
-							x: x,
-							y: y,
-							width: w,
-							height: h,
-							color: pdfLib.rgb(r, g, b),
-							opacity: 0.35,
-							borderWidth: 0
-						});
-					} else if (a.type === 'signature') {
-						signatureEmbedPromises.push(async () => {
-							const pngImage = await pdf.embedPng(a.dataUrl); 
-							
-							const x = a.x * scaleX;
-							const yTopCanvas = a.y; 
-							const y = pageHeight - ((yTopCanvas + a.h) * scaleY); 
-							const w = a.w * scaleX;
-							const h = a.h * scaleY;
+                        const x = a.x * scaleX;
+                        const yTopCanvas = a.y; 
+                        const y = pageHeight - ((yTopCanvas + a.h) * scaleY); 
+                        const w = a.w * scaleX;
+                        const h = a.h * scaleY;
 
-							page.drawImage(pngImage, {
-								x: x, 
-								y: y, 
-								width: w, 
-								height: h,
-								opacity: 1.0, 
-							});
-						});
-					}
-				});
-			}
+                        page.drawRectangle({
+                            x: x,
+                            y: y,
+                            width: w,
+                            height: h,
+                            color: pdfLib.rgb(r, g, b),
+                            opacity: 0.35,
+                            borderWidth: 0
+                        });
+                    } else if (a.type === 'signature') {
+                        signatureEmbedPromises.push(async () => {
+                            const pngImage = await pdf.embedPng(a.dataUrl); 
+                            
+                            const x = a.x * scaleX;
+                            const yTopCanvas = a.y; 
+                            const y = pageHeight - ((yTopCanvas + a.h) * scaleY); 
+                            const w = a.w * scaleX;
+                            const h = a.h * scaleY;
 
-			await Promise.all(signatureEmbedPromises.map(p => p()));
-			// --- PDF 生成逻辑结束 ---
+                            page.drawImage(pngImage, {
+                                x: x, 
+                                y: y, 
+                                width: w, 
+                                height: h,
+                                opacity: 1.0, 
+                            });
+                        });
+                    }
+                });
+            }
 
-			// 4. 准备下载文件
-			const pdfBytes = await pdf.save();
-			const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            await Promise.all(signatureEmbedPromises.map(p => p()));
 
-			const name = (originalFile && originalFile.name) ? originalFile.name.replace(/\.pdf$/i, '') : 'document';
-			const fileName = `${name}-annotated.pdf`;
-			
-			// 5. 触发下载 (使用最可靠的 a.click() 方式)
-			// 检查是否支持 msSaveOrOpenBlob (IE/Edge)
-			if (window.navigator.msSaveOrOpenBlob) {
-				window.navigator.msSaveOrOpenBlob(blob, fileName);
-				// 成功后，我们仍然可以给一个纯文本通知，告知用户下载已开始
-				showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000);
-			} else {
-				// 在其他浏览器（包括微信）中：
-				const url = URL.createObjectURL(blob); 
-				
-				// 创建一个下载链接
-				const a = document.createElement('a');
-				a.href = url;
-				a.download = fileName;
-				
-				// 将链接添加到 DOM，触发点击，然后移除。这是触发下载的最标准方法。
-				document.body.appendChild(a);
-				a.click();
-				document.body.removeChild(a);
+            const pdfBytes = await pdf.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            
+            const name = (originalFile && originalFile.name) ? originalFile.name.replace(/\.pdf$/i, '') : 'document';
+            const fileName = `${name}-annotated.pdf`;
 
-				// 成功后，我们仍然可以给一个纯文本通知，告知用户下载已开始
-				// 注意：如果微信阻止 a.click()，用户会被提示“在外部浏览器打开”。
-				// 此时，通知可以作为一个纯文本提示。
-				showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000);
-				
-				// 释放 Blob URL，防止内存泄漏。
-				setTimeout(() => {
-					URL.revokeObjectURL(url);
-				}, 100); 
-			}
-			
-		} catch (error) {
-			// 保留失败通知（使用 langStrings 进行翻译）
-			console.error("PDF Download Error:", error);
+            if (isWeChat()) {
+                // WeChat detection: Show instruction to open in external browser and re-download.
+                showTopNotification(langStrings['download_success_wechat_hint'], 'success', 20000); // 延长显示时间
+            } else {
+                // Standard browser: Proceed with download and show clickable link notification.
+                const url = URL.createObjectURL(blob); 
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000, fileName, url); 
+                
+                // Revoke Blob URL after a short delay
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 100);
+            }
+            
+        } catch (error) {
+            console.error("PDF Download Error:", error);
 			showTopNotification(langStrings['notification_download_failed'], 'failure', 10000); 
-		} finally {
-			// 无论成功还是失败，都要恢复按钮状态
-			downloadBtn.textContent = '⬇️';
-			downloadBtn.disabled = false;
-		}
-	};
+        } finally {
+            downloadBtn.textContent = '⬇️';
+            downloadBtn.disabled = false;
+        }
+    };
 	
-	// NEW: Top Notification Function (Updated for Clickable Filename)
+	// NEW: Top Notification Function (Updated for Clickable Filename and WeChat Hint)
 	let notificationTimeout = null;
 	const NOTIFICATION_ID = 'topNotification';
 
@@ -1727,8 +1826,9 @@
 		
 		notificationDiv.innerHTML = ''; 
 
+        // 关键变化：检查是否同时提供了 fileName 和 fileUrl (仅在非微信成功下载时提供)
 		if (type === 'success' && fileName && fileUrl) {
-            // 成功：显示可点击的文件名
+            // 成功（非微信）：显示可点击的文件名
 			const messageParts = message.split(fileName);
 			const spanMsg = document.createElement('span');
 			spanMsg.textContent = messageParts[0]; 
@@ -1750,8 +1850,14 @@
 			const spanMsg2 = document.createElement('span');
 			spanMsg2.textContent = messageParts[1] || ''; 
 			notificationDiv.appendChild(spanMsg2);
-			
-		} else if (type === 'failure') {
+
+		} else if (type === 'success') {
+            // 成功（微信提示）：只显示纯文本消息
+            notificationDiv.textContent = message;
+            notificationDiv.onclick = null; 
+            notificationDiv.style.cursor = 'default'; 
+        
+        } else if (type === 'failure') {
             // 失败：点击整个通知栏发送邮件
 			notificationDiv.textContent = message;
 			notificationDiv.onclick = () => {
