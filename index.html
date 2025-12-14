@@ -1519,7 +1519,8 @@
     }
 
 
-    // --- Download PDF Logic (Final Version with Notification) ---
+    // --- Download PDF Logic (FIXED) ---
+    // --- Download PDF Logic (最终修正版) ---
 	downloadBtn.onclick = async () => {
 		
 		// 禁用下载按钮并显示加载中状态
@@ -1567,6 +1568,7 @@
 				const scaleY = page.getHeight() / currentPageCanvas.height;
 				
 				pageAnnos.forEach(a => {
+					// ... (省略所有 drawText, drawImage, drawRectangle 的逻辑，保持与您当前文件一致) ...
 					if (a.type === 'text') {
 						const lines = a.text.split('\n');
 						const lineHeight = a.fontSize * 1.2;
@@ -1657,28 +1659,37 @@
 			const name = (originalFile && originalFile.name) ? originalFile.name.replace(/\.pdf$/i, '') : 'document';
 			const fileName = `${name}-annotated.pdf`;
 			
-			// 5. 触发下载/跳转到 PDF 页面
+			// 5. 触发下载 (使用最可靠的 a.click() 方式)
 			// 检查是否支持 msSaveOrOpenBlob (IE/Edge)
 			if (window.navigator.msSaveOrOpenBlob) {
 				window.navigator.msSaveOrOpenBlob(blob, fileName);
-				// IE/Edge 成功下载后，我们显示一个成功的纯文本通知
+				// 成功后，我们仍然可以给一个纯文本通知，告知用户下载已开始
 				showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000);
 			} else {
 				// 在其他浏览器（包括微信）中：
 				const url = URL.createObjectURL(blob); 
 				
-				// 使用 window.open 确保 PDF 在新标签页打开/显示
-				window.open(url, '_blank');
+				// 创建一个下载链接
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = fileName;
 				
-				// 显示成功通知，但通知中不包含链接，只提示用户已经打开
+				// 将链接添加到 DOM，触发点击，然后移除。这是触发下载的最标准方法。
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+
+				// 成功后，我们仍然可以给一个纯文本通知，告知用户下载已开始
+				// 注意：如果微信阻止 a.click()，用户会被提示“在外部浏览器打开”。
+				// 此时，通知可以作为一个纯文本提示。
 				showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000);
 				
-				// 由于已经打开，为了防止内存泄漏，我们设置一个延迟来撤销 Blob URL
+				// 释放 Blob URL，防止内存泄漏。
 				setTimeout(() => {
 					URL.revokeObjectURL(url);
-				}, 500); 
+				}, 100); 
 			}
-				
+			
 		} catch (error) {
 			// 保留失败通知（使用 langStrings 进行翻译）
 			console.error("PDF Download Error:", error);
@@ -1704,6 +1715,11 @@
 	 */
 	function showTopNotification(message, type = 'success', duration = 6000, fileName = null, fileUrl = null) {
 		let notificationDiv = document.getElementById(NOTIFICATION_ID);
+		if (!notificationDiv) {
+			notificationDiv = document.createElement('div');
+			notificationDiv.id = NOTIFICATION_ID;
+			document.body.appendChild(notificationDiv);
+		}
 
 		// 清除上一次的类和点击事件
 		notificationDiv.className = '';
@@ -1711,26 +1727,45 @@
 		
 		notificationDiv.innerHTML = ''; 
 
-	    if (type === 'success') { // 简化：不再使用 fileName 和 fileUrl 来创建链接
-			// 成功：只显示纯文本消息
-			notificationDiv.textContent = message;
+		if (type === 'success' && fileName && fileUrl) {
+            // 成功：显示可点击的文件名
+			const messageParts = message.split(fileName);
+			const spanMsg = document.createElement('span');
+			spanMsg.textContent = messageParts[0]; 
+			notificationDiv.appendChild(spanMsg);
+
+			const fileLink = document.createElement('a');
+			fileLink.href = fileUrl;
+			fileLink.textContent = fileName;
+			fileLink.style.color = 'inherit'; 
+			fileLink.style.fontWeight = 'bold';
+			fileLink.style.textDecoration = 'underline';
+			fileLink.target = '_blank'; 
+			
 			notificationDiv.onclick = null; 
 			notificationDiv.style.cursor = 'default'; 
 
+			notificationDiv.appendChild(fileLink);
+			
+			const spanMsg2 = document.createElement('span');
+			spanMsg2.textContent = messageParts[1] || ''; 
+			notificationDiv.appendChild(spanMsg2);
+			
 		} else if (type === 'failure') {
-			// ... (保持失败逻辑不变) ...
+            // 失败：点击整个通知栏发送邮件
 			notificationDiv.textContent = message;
 			notificationDiv.onclick = () => {
 				const email = 'panpanr@gmail.com';
 				const subject = 'PDF Edit Download Failure Report';
 				const body = 'I am reporting a download failure on your PDF tool. Please assist.';
 				window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+				// 立即隐藏通知
 				notificationDiv.classList.remove('notification-show');
 				notificationDiv.onclick = null; 
 			};
 			notificationDiv.style.cursor = 'pointer';
 		} else {
-			// ... (保持其他情况逻辑不变) ...
+            // 其他情况：显示纯文本消息
 			notificationDiv.textContent = message;
 			notificationDiv.onclick = null;
 			notificationDiv.style.cursor = 'default';
