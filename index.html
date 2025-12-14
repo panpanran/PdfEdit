@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title id="appTitle">PDF Upload, Inline Annotation & Download</title>
+  <title>PDF Upload, Inline Annotation & Download</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
 	  /* NEW: Top Bar Notification Styles (Modified for Bootstrap-like Alert) */
@@ -281,23 +281,23 @@
      crossorigin="anonymous"></script>
 </head>
 <body>
-  <h2 id="mainHeading">PDF Upload, Inline Annotation & Download</h2>
+  <h2 id="page-title">PDF Upload, Inline Annotation & Download</h2>
 
   <div class="toolbar">
     <div class="row">
-      <span class="label" id="labelChoosePdf">Choose PDF:</span>
+      <span class="label" id="upload-label">Choose PDF:</span>
       <input type="file" id="fileInput" accept="application/pdf" />
     </div>
     
     <div class="page-controls">
-      <span class="label"><span id="labelTotalPages">Total Pages</span>: <span id="pageCount">0</span></span>
-      <label for="pageInput" id="labelGoToPage">Go to Page:</label>
+      <span class="label">Total Pages: <span id="pageCount">0</span></span>
+      <label for="pageInput">Go to Page:</label>
       <input type="number" id="pageInput" min="1" value="1" style="width: 50px;" disabled />
       <button id="goToPageBtn" disabled title="Go">➡️</button>
     </div>
 
     <div class="tools">
-      <span class="label" id="labelTools">Tools:</span>
+      <span class="label">Tools:</span>
       <button id="toolMouse" title="Select/Move">🖱️</button> 
       <button id="toolSelectText" title="Select Text">I</button> 
       <button id="toolText" title="Add Text">T</button>
@@ -314,11 +314,11 @@
       </select>
 	  <button id="undoBtn" disabled title="Undo">↩️</button>
       <button id="redoBtn" disabled title="Redo">↪️</button>
-      <button id="downloadBtn" disabled title="Download">⬇️</button>
+      <button id="downloadBtn" disabled title="Download PDF">⬇️</button>
     </div>
   </div>
 
-  <div id="appHint" class="hint"></div>
+  <div class="hint">Tip: Use mouse wheel or arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. I = Select text on the PDF (I-beam cursor). T = click to place, DOUBLE-CLICK to edit, drag to move. 🖍️ = select text to highlight. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.</div>
 
   <div id="pdf-viewer-wrapper">
     </div>
@@ -328,7 +328,7 @@
   
   <div id="signatureModal">
       <div id="signatureContent">
-          <h3 id="modalTitle">Draw Your Signature</h3>
+          <h3 id="signature-modal-title">Draw Your Signature</h3>
           <canvas id="signaturePadCanvas" width="560" height="200"></canvas>
           <div class="modal-buttons">
               <button id="clearSignatureBtn">Clear</button>
@@ -368,100 +368,230 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc =
         './js/pdf.worker.min.js';
     }
-    
-    // --- Localization and Utility Functions ---
-    // NEW: 微信环境检测函数
-    function isWeChat() {
-        return /MicroMessenger/i.test(navigator.userAgent);
-    }
 
-    function getSystemLanguage() {
-        let lang = (navigator.language || navigator.userLanguage).toLowerCase();
-        // 简化为 zh 或 en
-        if (lang.startsWith('zh')) return 'zh';
-        return 'en'; 
-    }
-
-    const translations = {
-        'zh': {
-            'title': 'PDF 上传、内联注释与下载',
-            'choose_pdf': '选择 PDF',
-            'total_pages': '总页数',
-            'go_to_page': '跳转到页码',
-            'go_btn': '跳转',
-            'tools': '工具',
-            'tool_mouse_title': '选择/移动',
-            'tool_select_text_title': '选择文本',
-            'tool_text_title': '添加文本',
-            'tool_highlight_title': '高亮',
-            'tool_signature_title': '签名',
-            'tool_delete_title': '删除',
-            'tool_color_title': '颜色',
-            'tool_undo_title': '撤销',
-            'tool_redo_title': '重做',
-            'tool_download_title': '下载',
-            'tip_desktop': '提示: 使用鼠标滚轮或方向键翻页。🖱️ = 选择/移动现有文本或签名。I = 选择 PDF 上的文本。T = 点击放置，双击编辑，拖动移动。🖍️ = 选择文本高亮。✍️ = 打开签名板。🗑️ = 点击注释删除。',
-            'tip_mobile': '提示: 使用方向键翻页。🖱️ = 选择/移动现有文本或签名。T = 点击放置，双击编辑，拖动移动。✍️ = 打开签名板。🗑️ = 点击注释删除。',
-            'generating': '正在生成...',
-            'new_text': '新文本',
-            'draw_signature': '绘制签名',
-            'clear': '清除',
-            'save_place': '保存并放置',
-            'cancel': '取消',
-            'alert_signature_missing': '签名板为空。请绘制您的签名。',
-            'alert_page_invalid': (numPages) => `请输入一个介于 1 和 ${numPages} 之间的有效页码。`,
-            'notification_upload_first': '请先上传一个 PDF 文件。',
-            'notification_download_failed': '文件下载失败...请点击此栏发送邮件给管理员',
-            'alert_pdf_error': '加载 PDF 出错。请检查浏览器控制台 (F12) 查看详情。',
-            'notification_download_success_prefix': "' ",
-            'notification_download_success_suffix': " ' 已成功下载！点击打开。",
-            // NEW WeChat specific string
-            'download_success_wechat_hint': '文件已成功生成！微信环境无法直接下载，请点击右上角菜单 -> 在浏览器中打开，然后在外部浏览器中再次点击下载。',
-            'alert_signature_pos_missing': '签名放置位置缺失。',
-        },
+    // --- 1. 语言词典 (LANGUAGES) ---
+    // 定义所有需要翻译的字符串
+    const LANGUAGES = {
+        // English (Default)
         'en': {
-            'title': 'PDF Upload, Inline Annotation & Download',
-            'choose_pdf': 'Choose PDF',
-            'total_pages': 'Total Pages',
-            'go_to_page': 'Go to Page',
-            'go_btn': 'Go',
-            'tools': 'Tools',
-            'tool_mouse_title': 'Select/Move',
-            'tool_select_text_title': 'Select Text',
-            'tool_text_title': 'Add Text',
-            'tool_highlight_title': 'Highlight',
-            'tool_signature_title': 'Signature',
-            'tool_delete_title': 'Delete',
-            'tool_color_title': 'Color',
-            'tool_undo_title': 'Undo',
-            'tool_redo_title': 'Redo',
-            'tool_download_title': 'Download',
-            'tip_desktop': 'Tip: Use mouse wheel or arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. I = Select text on the PDF (I-beam cursor). T = click to place, DOUBLE-CLICK to edit, drag to move. 🖍️ = select text to highlight. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.',
-            'tip_mobile': 'Tip: Use arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. T = click to place, DOUBLE-CLICK to edit, drag to move. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.',
+            'page_title': 'PDF Upload, Inline Annotation & Download',
+            'main_title': 'PDF Upload, Inline Annotation & Download',
+            'upload_label': 'Choose PDF:',
+            'download_button_title': 'Download PDF',
+            'signature_modal_title': 'Draw Your Signature',
+            'clear_button': 'Clear',
+            'save_button': 'Save and Place',
+            'cancel_button': 'Cancel',
+            
+            'notification_success_prefix': 'File downloaded successfully: ',
+            'notification_success_suffix': '. Click to open.',
+            'notification_failure': 'Download failed. Click here to report the issue via email.',
+            
+            'prompt_title': 'Please Open in External Browser',
+            'prompt_message_1': 'The built-in browser (e.g., WeChat, Facebook) may restrict full functionality, especially file downloads.',
+            'prompt_message_2': 'Please tap the menu (•••) icon in the top right, and choose "Open in Browser" or "Open with another browser" to ensure full functionality.',
+            
+            'alert_valid_page': 'Please enter a valid page number between 1 and',
+            'alert_empty_signature': 'The signature pad is empty. Please draw your signature.',
+            'alert_missing_pos': 'Signature placement position is missing.',
+            'alert_upload_first': 'Please upload a PDF first.',
+
+            'email_subject': 'PDF Edit Download Failure Report',
+            'email_body': 'I am reporting a download failure on your PDF tool. Please assist.',
             'generating': 'Generating...',
-            'new_text': 'New Text',
-            'draw_signature': 'Draw Your Signature',
-            'clear': 'Clear',
-            'save_place': 'Save and Place',
-            'cancel': 'Cancel',
-            'alert_signature_missing': 'The signature pad is empty. Please draw your signature.',
-            'alert_page_invalid': (numPages) => `Please enter a valid page number between 1 and ${numPages}.`,
-            'notification_upload_first': 'Please upload a PDF first.',
-            'notification_download_failed': 'File download failed...Please click this bar to send email to administrator',
-            'alert_pdf_error': 'Error loading PDF. Please check the browser console (F12) for details.',
-            'notification_download_success_prefix': "' ",
-            'notification_download_success_suffix': " ' is downloaded successfully! Click to open.",
-            // NEW WeChat specific string
-            'download_success_wechat_hint': 'File successfully generated! Direct download failed in WeChat. Please tap the menu icon -> Open in Browser, then click Download again in the external browser.',
-            'alert_signature_pos_missing': 'Signature placement position is missing.',
+        },
+        // Simplified Chinese
+        'zh-CN': {
+            'page_title': 'PDF 上传、内联注释与下载',
+            'main_title': 'PDF 上传、内联注释与下载',
+            'upload_label': '选择 PDF:',
+            'download_button_title': '下载 PDF',
+            'signature_modal_title': '绘制您的签名',
+            'clear_button': '清除',
+            'save_button': '保存并放置',
+            'cancel_button': '取消',
+
+            'notification_success_prefix': '文件已成功下载：',
+            'notification_success_suffix': '。点击链接查看。',
+            'notification_failure': '下载失败。点击此处通过邮件报告问题。',
+            
+            'prompt_title': '请使用外部浏览器打开',
+            'prompt_message_1': '内置浏览器（如微信、Facebook）可能会限制完整功能，尤其是文件下载。',
+            'prompt_message_2': '请点击右上角菜单 (•••)，选择“在浏览器中打开”或“用其他浏览器打开”，以确保所有功能正常使用。',
+            
+            'alert_valid_page': '请输入 1 到',
+            'alert_empty_signature': '签名板为空。请绘制您的签名。',
+            'alert_missing_pos': '签名放置位置缺失。',
+            'alert_upload_first': '请先上传 PDF 文件。',
+            
+            'email_subject': 'PDF 编辑下载失败报告',
+            'email_body': '我正在报告您的 PDF 工具出现下载失败。请协助处理。',
+            'generating': '正在生成...',
+        },
+        // Traditional Chinese (Fallback for generic 'zh')
+        'zh-TW': {
+            'page_title': 'PDF 上傳、內聯註釋與下載',
+            'main_title': 'PDF 上傳、內聯註釋與下載',
+            'upload_label': '選擇 PDF:',
+            'download_button_title': '下載 PDF',
+            'signature_modal_title': '繪製您的簽名',
+            'clear_button': '清除',
+            'save_button': '儲存並放置',
+            'cancel_button': '取消',
+            
+            'notification_success_prefix': '檔案已成功下載：',
+            'notification_success_suffix': '。點擊連結查看。',
+            'notification_failure': '下載失敗。點擊此處通過郵件報告問題。',
+            
+            'prompt_title': '請使用外部瀏覽器開啟',
+            'prompt_message_1': '內建瀏覽器（如微信、Facebook）可能會限制完整功能，尤其是檔案下載。',
+            'prompt_message_2': '請點擊右上角菜單 (•••)，選擇“在瀏覽器中開啟”或“用其他瀏覽器開啟”，以確保所有功能正常使用。',
+            
+            'alert_valid_page': '請輸入 1 到',
+            'alert_empty_signature': '簽名板為空。請繪製您的簽名。',
+            'alert_missing_pos': '簽名放置位置缺失。',
+            'alert_upload_first': '請先上傳 PDF 文件。',
+
+            'email_subject': 'PDF 編輯下載失敗報告',
+            'email_body': '我正在報告您的 PDF 工具出現下載失敗。請協助處理。',
+            'generating': '正在生成...',
         }
     };
 
-    const lang = getSystemLanguage();
-    const langStrings = translations[lang] || translations['en']; 
+    // --- 2. 语言检测与获取 (getLang) ---
+    function getLang() {
+        const userLang = navigator.language || navigator.userLanguage;
+        const baseLang = userLang.split('-')[0]; 
+        
+        if (LANGUAGES[userLang]) {
+            return LANGUAGES[userLang];
+        }
+        
+        for (const key in LANGUAGES) {
+            if (key.startsWith(baseLang)) {
+                return LANGUAGES[key];
+            }
+        }
+        
+        if (baseLang === 'zh') {
+            return LANGUAGES['zh-CN'];
+        }
 
-    // --- DOM Elements & Variable Initialization ---
-    // ... (保持原有的元素获取和变量定义不变) ...
+        return LANGUAGES['en'];
+    }
+
+    const LANG = getLang();
+
+    // --- 页面静态元素翻译 (localizePageElements) ---
+    function localizePageElements() {
+        document.title = LANG.page_title;
+        
+        const mainTitle = document.getElementById('page-title');
+        if (mainTitle) {
+            mainTitle.textContent = LANG.main_title;
+        }
+
+        const uploadLabel = document.getElementById('upload-label');
+        if (uploadLabel) {
+            uploadLabel.textContent = LANG.upload_label;
+        }
+        
+        const downloadButton = document.getElementById('downloadBtn');
+        if (downloadButton) {
+            downloadButton.title = LANG.download_button_title;
+        }
+        
+        const signatureTitle = document.getElementById('signature-modal-title');
+        if (signatureTitle) {
+            signatureTitle.textContent = LANG.signature_modal_title;
+        }
+        
+        document.getElementById('clearSignatureBtn').textContent = LANG.clear_button;
+        document.getElementById('saveSignatureBtn').textContent = LANG.save_button;
+        document.getElementById('closeSignatureBtn').textContent = LANG.cancel_button;
+        
+        // 翻译其他工具的 Title 属性 (为了简洁，只翻译下载按钮的 title)
+        // 可以根据需要扩展到 toolMouse, toolSelectText, toolText, etc.
+    }
+
+
+    // --- 3. 内置浏览器检测 (Localized In-App Browser Detection) ---
+    (function() {
+        const ua = navigator.userAgent.toLowerCase();
+        
+        const isWeChat = ua.includes('micromessenger'); 
+        const isQQ = ua.includes('qq'); 
+        const isFacebook = ua.includes('fban') || ua.includes('fbsv'); 
+        const isInstagram = ua.includes('instagram'); 
+        
+        const isInAppBrowser = isWeChat || isQQ || isFacebook || isInstagram;
+        
+        if (isInAppBrowser) {
+            // 1. 注入 CSS
+            const style = document.createElement('style');
+            style.textContent = `
+                /* 强制浏览器打开提示层 */
+                #browserPromptOverlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background-color: #fefefe; 
+                    z-index: 10001; 
+                    display: flex; 
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                    padding: 20px;
+                    box-sizing: border-box;
+                    flex-direction: column;
+                }
+                #browserPromptContent {
+                    max-width: 400px;
+                    padding: 30px;
+                    border-radius: 10px;
+                    background-color: #fff;
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                }
+                #browserPromptContent h3 {
+                    color: #333;
+                    margin-bottom: 15px;
+                }
+                #browserPromptContent p {
+                    color: #666;
+                    line-height: 1.8;
+                    font-size: 16px;
+                }
+                .browser-icon-hint {
+                    font-size: 50px;
+                    margin: 20px 0;
+                    color: #f0ad4e;
+                }
+            `;
+            document.head.appendChild(style);
+
+            // 2. 注入 HTML (使用本地化文本)
+            const overlay = document.createElement('div');
+            overlay.id = 'browserPromptOverlay';
+            overlay.innerHTML = `
+                <div id="browserPromptContent">
+                    <h3>${LANG.prompt_title}</h3>
+                    <div class="browser-icon-hint">👆</div>
+                    <p>${LANG.prompt_message_1}</p>
+                    <p>${LANG.prompt_message_2}</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            // 阻止背景滚动
+            document.body.style.overflow = 'hidden';
+        }
+    })();
+    // --- END In-App Browser Detection ---
+
+
+    // --- 修复: 确保所有变量在被使用前都被正确定义和赋值 ---
     const fileInput = document.getElementById('fileInput');
     const pdfViewerWrapper = document.getElementById('pdf-viewer-wrapper');
     const pageCountSpan = document.getElementById('pageCount');
@@ -618,47 +748,17 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        // --- Apply Translations to Static HTML Elements ---
-        document.getElementById('appTitle').textContent = langStrings['title'];
-        document.getElementById('mainHeading').textContent = langStrings['title'];
-        document.getElementById('labelChoosePdf').textContent = langStrings['choose_pdf'] + ':';
-        document.getElementById('labelTotalPages').textContent = langStrings['total_pages'];
-        document.getElementById('labelGoToPage').textContent = langStrings['go_to_page'] + ':';
-        
-        document.getElementById('labelTools').textContent = langStrings['tools'] + ':';
-
-        toolMouseBtn.title = langStrings['tool_mouse_title'];
-        toolSelectTextBtn.title = langStrings['tool_select_text_title'];
-        toolTextBtn.title = langStrings['tool_text_title'];
-        toolHighlightBtn.title = langStrings['tool_highlight_title'];
-        toolSignatureBtn.title = langStrings['tool_signature_title'];
-        toolDeleteBtn.title = langStrings['tool_delete_title'];
-        colorInput.title = langStrings['tool_color_title'];
-        undoBtn.title = langStrings['tool_undo_title'];
-        redoBtn.title = langStrings['tool_redo_title'];
-        downloadBtn.title = langStrings['tool_download_title'];
-        
-        // Signature Modal
-        document.getElementById('modalTitle').textContent = langStrings['draw_signature'];
-        document.getElementById('clearSignatureBtn').textContent = langStrings['clear'];
-        document.getElementById('saveSignatureBtn').textContent = langStrings['save_place'];
-        document.getElementById('closeSignatureBtn').textContent = langStrings['cancel'];
-        
-        // Hint text
-        const hintElement = document.getElementById('appHint');
-        
+        localizePageElements(); // NEW: 页面加载完成后立即进行本地化翻译
         toolMouseBtn.click(); // 默认启用鼠标工具
         
         // NEW: 如果是移动设备，隐藏 Select Text 和 Highlight 工具
         if (isMobileDevice()) {
             toolSelectTextBtn.style.display = 'none';
             toolHighlightBtn.style.display = 'none';
+            
+            const hintElement = document.querySelector('.hint');
             if (hintElement) {
-                 hintElement.innerHTML = langStrings['tip_mobile'];
-            }
-        } else {
-             if (hintElement) {
-                 hintElement.innerHTML = langStrings['tip_desktop'];
+                 hintElement.innerHTML = 'Tip: Use arrow keys to scroll through pages. 🖱️ = Select/Move existing Text or Signature. T = click to place, DOUBLE-CLICK to edit, drag to move. ✍️ = open signature pad. 🗑️ = click on an annotation to remove.';
             }
         }
     });
@@ -1084,7 +1184,7 @@
                 x: pos.x,
                 y: pos.y,
                 color: colorInput.value,
-                text: langStrings['new_text'], // Use translated text
+                text: 'New Text',
                 fontSize: fontSize,
             };
             saveState();
@@ -1417,7 +1517,7 @@
 
     async function saveAndPlaceSignature() {
         if (!signaturePlacementPos || signaturePlacementPageNum === -1) {
-            alert(langStrings['alert_signature_pos_missing']); // Use translated text
+            alert(LANG.alert_missing_pos);
             return;
         }
         
@@ -1432,7 +1532,7 @@
 
         const isEmpty = isCanvasEmpty(signaturePadCanvas, signatureCtx);
         if (isEmpty) {
-            alert(langStrings['alert_signature_missing']); // Use translated text
+            alert(LANG.alert_empty_signature);
             return;
         }
         
@@ -1491,7 +1591,7 @@
             downloadBtn.disabled = false;
         } catch (error) {
             console.error("PDF Loading Error:", error);
-            alert(langStrings['alert_pdf_error']); // Use translated text
+            alert("Error loading PDF. Please check the browser console (F12) for details.");
             pdfViewerWrapper.innerHTML = 'PDF loading failed.';
             pdfDoc = null;
             downloadBtn.disabled = true;
@@ -1565,8 +1665,8 @@
         const pageNum = parseInt(pageInput.value, 10);
         if (pdfDoc && pageNum >= 1 && pageNum <= pdfDoc.numPages) {
             goToPage(pageNum);
-        } else if (pdfDoc) {
-            alert(langStrings['alert_page_invalid'](pdfDoc.numPages)); // Use translated text
+        } else {
+            alert(`${LANG.alert_valid_page} ${pdfDoc.numPages}`);
             pageInput.value = 1;
         }
     };
@@ -1642,10 +1742,10 @@
     }
 
 
-    // --- Download PDF Logic (FINAL WeChat-aware) ---
+    // --- Download PDF Logic (Localized) ---
     downloadBtn.onclick = async () => {
         if (!pdfDoc) {
-            showTopNotification(langStrings['notification_upload_first'], 'failure', 4000);
+            showTopNotification(LANG.alert_upload_first, 'failure', 4000);
             return;
         }
         if (activeAnno) {
@@ -1653,7 +1753,7 @@
         }
         
         downloadBtn.disabled = true;
-        downloadBtn.textContent = langStrings['generating']; // Use translated text
+        downloadBtn.textContent = LANG.generating;
 
         try {
             if (!originalFile) {
@@ -1765,42 +1865,30 @@
 
             const pdfBytes = await pdf.save();
             const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            
+            const url = URL.createObjectURL(blob); 
+
+            const a = document.createElement('a');
+            a.href = url;
             const name = (originalFile && originalFile.name) ? originalFile.name.replace(/\.pdf$/i, '') : 'document';
             const fileName = `${name}-annotated.pdf`;
-
-            if (isWeChat()) {
-                // WeChat detection: Show instruction to open in external browser and re-download.
-                showTopNotification(langStrings['download_success_wechat_hint'], 'success', 20000); // 延长显示时间
-            } else {
-                // Standard browser: Proceed with download and show clickable link notification.
-                const url = URL.createObjectURL(blob); 
-                
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                
-                showTopNotification(langStrings['notification_download_success_prefix'] + fileName + langStrings['notification_download_success_suffix'], 'success', 10000, fileName, url); 
-                
-                // Revoke Blob URL after a short delay
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 100);
-            }
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+			
+            // --- NEW: 传递本地化的消息、文件名和 Blob URL ---
+			showTopNotification(`${LANG.notification_success_prefix}${fileName}${LANG.notification_success_suffix}`, 'success', 10000, fileName, url); 
             
         } catch (error) {
             console.error("PDF Download Error:", error);
-			showTopNotification(langStrings['notification_download_failed'], 'failure', 10000); 
+			showTopNotification(LANG.notification_failure, 'failure', 10000); 
         } finally {
             downloadBtn.textContent = '⬇️';
             downloadBtn.disabled = false;
         }
     };
 	
-	// NEW: Top Notification Function (Updated for Clickable Filename and WeChat Hint)
+	// --- 4. 顶部通知栏函数 (showTopNotification, Localized & Fixed) ---
 	let notificationTimeout = null;
 	const NOTIFICATION_ID = 'topNotification';
 
@@ -1825,11 +1913,22 @@
 		notificationDiv.classList.add('notification-' + type);
 		
 		notificationDiv.innerHTML = ''; 
+        // 允许用户点击通知栏的非链接区域来手动关闭通知
+        notificationDiv.onclick = () => {
+             if (notificationTimeout) {
+                clearTimeout(notificationTimeout);
+                notificationTimeout = null;
+            }
+            notificationDiv.classList.remove('notification-show');
+            notificationDiv.onclick = null; 
+        };
+        notificationDiv.style.cursor = 'pointer'; 
 
-        // 关键变化：检查是否同时提供了 fileName 和 fileUrl (仅在非微信成功下载时提供)
 		if (type === 'success' && fileName && fileUrl) {
-            // 成功（非微信）：显示可点击的文件名
+            // 成功：显示可点击的文件名 (消息包含了前缀、文件名、后缀)
+            // 分割消息以重新构建，确保文件名是可点击的链接
 			const messageParts = message.split(fileName);
+			
 			const spanMsg = document.createElement('span');
 			spanMsg.textContent = messageParts[0]; 
 			notificationDiv.appendChild(spanMsg);
@@ -1842,28 +1941,32 @@
 			fileLink.style.textDecoration = 'underline';
 			fileLink.target = '_blank'; 
 			
-			notificationDiv.onclick = null; 
-			notificationDiv.style.cursor = 'default'; 
-
+            // 【核心修复】阻止点击事件冒泡，防止被父元素的点击关闭逻辑拦截，并立即隐藏通知
+            fileLink.addEventListener('click', (e) => {
+                e.stopPropagation(); 
+                if (notificationTimeout) {
+                    clearTimeout(notificationTimeout);
+                    notificationTimeout = null;
+                }
+                notificationDiv.classList.remove('notification-show');
+                // 确保父元素的点击事件被清除
+                notificationDiv.onclick = null; 
+            });
+            
 			notificationDiv.appendChild(fileLink);
 			
 			const spanMsg2 = document.createElement('span');
 			spanMsg2.textContent = messageParts[1] || ''; 
 			notificationDiv.appendChild(spanMsg2);
 
-		} else if (type === 'success') {
-            // 成功（微信提示）：只显示纯文本消息
-            notificationDiv.textContent = message;
-            notificationDiv.onclick = null; 
-            notificationDiv.style.cursor = 'default'; 
-        
-        } else if (type === 'failure') {
-            // 失败：点击整个通知栏发送邮件
-			notificationDiv.textContent = message;
+			
+		} else if (type === 'failure') {
+            // 失败：显示本地化消息，点击发送本地化邮件
+			notificationDiv.textContent = LANG.notification_failure;
 			notificationDiv.onclick = () => {
 				const email = 'panpanr@gmail.com';
-				const subject = 'PDF Edit Download Failure Report';
-				const body = 'I am reporting a download failure on your PDF tool. Please assist.';
+				const subject = LANG.email_subject;
+				const body = LANG.email_body;
 				window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 				// 立即隐藏通知
 				notificationDiv.classList.remove('notification-show');
@@ -1873,8 +1976,7 @@
 		} else {
             // 其他情况：显示纯文本消息
 			notificationDiv.textContent = message;
-			notificationDiv.onclick = null;
-			notificationDiv.style.cursor = 'default';
+            // 其他情况也需要支持点击关闭
 		}
 
         // 关键：添加 show 类，触发 CSS 的 opacity: 1 渐变入场
@@ -1887,6 +1989,7 @@
 		notificationTimeout = setTimeout(() => {
             // 关键：移除 show 类，通过 opacity 过渡实现渐变消失
 			notificationDiv.classList.remove('notification-show'); 
+            notificationDiv.onclick = null;
 		}, duration);
 	}
   </script>
